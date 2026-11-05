@@ -319,6 +319,20 @@ export const dataService = {
     }
   },
 
+  updateMatch: async (id: string, updates: Partial<MatchRecord>): Promise<MatchRecord[]> => {
+    const path = dataService.getUserPath();
+    if (path && db) {
+      const payload = cleanFirestorePayload(updates);
+      await updateDoc(doc(db, `${path}/matches`, id), payload);
+      return dataService.getMatches();
+    } else {
+      const matches = await dataService.getMatches();
+      const updated = matches.map(m => m.id === id ? { ...m, ...updates } : m);
+      dataService.saveLocal(MATCHES_KEY, updated);
+      return updated;
+    }
+  },
+
   deleteMatch: async (id: string): Promise<MatchRecord[]> => {
     const path = dataService.getUserPath();
     if (path && db) {

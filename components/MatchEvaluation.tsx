@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Swords, Star, Save, Plus, ChevronRight, X, Heart, Zap, Target, MessageCircle, Trophy, Hash, Loader2, Presentation, PenTool, Image as ImageIcon, Trash2, Link as LinkIcon, DownloadCloud, AlertCircle, Clock, Activity, Code, Server, Undo2, Crosshair, Camera, Sparkles, ClipboardPaste, Wand2, Check, Calendar, Users } from 'lucide-react';
+import { Swords, Star, Save, Plus, ChevronRight, X, Heart, Zap, Target, MessageCircle, Trophy, Hash, Loader2, Presentation, PenTool, Image as ImageIcon, Trash2, Link as LinkIcon, DownloadCloud, AlertCircle, Clock, Activity, Code, Server, Undo2, Crosshair, Camera, Sparkles, ClipboardPaste, Wand2, Check, Calendar, Users, Edit3 } from 'lucide-react';
 import { dataService } from '../services/dataService';
 import { parseMatchText } from '../services/gemini';
 import { Player, MatchRecord, MatchFeedback, Shot } from '../types';
@@ -20,6 +20,7 @@ const LOADING_MESSAGES = [
 
 export const MatchEvaluation: React.FC = () => {
   const [isAdding, setIsAdding] = useState(false);
+  const [editingMatchId, setEditingMatchId] = useState<string | null>(null);
   const [selectedMatch, setSelectedMatch] = useState<MatchRecord | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [matches, setMatches] = useState<MatchRecord[]>([]);
@@ -114,6 +115,33 @@ export const MatchEvaluation: React.FC = () => {
       }
   };
 
+  const handleEditMatch = (match: MatchRecord) => {
+    setEditingMatchId(match.id);
+    const fbMap: Record<string, MatchFeedback> = {};
+    const ratedMap: Record<string, boolean> = {};
+
+    (match.feedbacks || []).forEach(f => {
+      fbMap[f.playerId] = f;
+      ratedMap[f.playerId] = true;
+    });
+
+    setNewMatch({
+      opponent: match.opponent || '',
+      date: match.date || new Date().toISOString().split('T')[0],
+      score: match.score?.toString() || '0',
+      opponentScore: match.opponentScore?.toString() || '0',
+      teamSummary: match.teamSummary || '',
+      tacticalPlays: match.tacticalPlays || [],
+      shots: match.shots || [],
+      feedbacks: fbMap
+    });
+
+    setIncludePlayerRatings((match.feedbacks || []).length > 0);
+    setActiveRatedPlayerIds(ratedMap);
+    setSelectedMatch(null);
+    setIsAdding(true);
+  };
+
   const saveMatch = async () => {
     if (!newMatch.opponent) return;
     setLoading(true);
@@ -126,7 +154,7 @@ export const MatchEvaluation: React.FC = () => {
         .map(([_, fb]) => fb);
     }
 
-    await dataService.saveMatch({
+    const matchData = {
       date: newMatch.date,
       opponent: newMatch.opponent,
       score: parseInt(newMatch.score) || 0,
@@ -135,10 +163,17 @@ export const MatchEvaluation: React.FC = () => {
       tacticalPlays: newMatch.tacticalPlays,
       shots: newMatch.shots,
       feedbacks: finalFeedbacks
-    });
+    };
+
+    if (editingMatchId) {
+      await dataService.updateMatch(editingMatchId, matchData);
+    } else {
+      await dataService.saveMatch(matchData);
+    }
     
     await loadData();
     setIsAdding(false);
+    setEditingMatchId(null);
     setImportedEvents([]);
     setIncludePlayerRatings(false);
     setActiveRatedPlayerIds({});
@@ -391,8 +426,18 @@ export const MatchEvaluation: React.FC = () => {
             </div>
 
             <div className="flex gap-4">
-              <button onClick={() => setIsAdding(false)} className="flex-1 py-4 rounded-xl bg-slate-800 text-slate-400 font-black uppercase text-[10px]">Avbryt</button>
-              <button onClick={saveMatch} className="flex-[2] py-4 rounded-xl bg-orange-600 text-white font-black uppercase text-[10px] shadow-xl shadow-orange-900/20">Spara Matchanalys</button>
+              <button 
+                onClick={() => { setIsAdding(false); setEditingMatchId(null); }} 
+                className="flex-1 py-4 rounded-xl bg-slate-800 text-slate-400 font-black uppercase text-[10px]"
+              >
+                Avbryt
+              </button>
+              <button 
+                onClick={saveMatch} 
+                className="flex-[2] py-4 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-black uppercase text-[10px] shadow-xl shadow-orange-900/20 active:scale-95 transition-all"
+              >
+                {editingMatchId ? 'Uppdatera Match' : 'Spara Match'}
+              </button>
             </div>
           </div>
         </div>
@@ -404,7 +449,14 @@ export const MatchEvaluation: React.FC = () => {
                     <Undo2 size={16} /> Tillbaka till listan
                 </button>
                 <div className="flex gap-2">
-                    <button onClick={async () => { if(confirm("Ta bort matchen permanent?")) { await dataService.deleteMatch(selectedMatch.id); loadData(); setSelectedMatch(null); } }} className="p-3 bg-rose-600/10 text-rose-500 border border-rose-500/20 rounded-2xl hover:bg-rose-600 hover:text-white transition-all">
+                    <button 
+                      onClick={() => handleEditMatch(selectedMatch)} 
+                      className="px-4 py-3 bg-slate-800 text-slate-300 hover:text-white border border-slate-700/80 rounded-2xl flex items-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all"
+                      title="Redigera matchresultat eller spelarbedömningar"
+                    >
+                      <Edit3 size={15} /> Redigera match
+                    </button>
+                    <button onClick={async () => { if(confirm("Ta bort matchen permanent?")) { await dataService.deleteMatch(selectedMatch.id); loadData(); setSelectedMatch(null); } }} className="p-3 bg-rose-600/10 text-rose-500 border border-rose-500/20 rounded-2xl hover:bg-rose-600 hover:text-white transition-all" title="Ta bort match">
                         <Trash2 size={18} />
                     </button>
                 </div>
