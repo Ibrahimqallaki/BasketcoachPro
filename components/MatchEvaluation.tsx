@@ -30,6 +30,9 @@ export const MatchEvaluation: React.FC = () => {
   const [loadingMsgIndex, setLoadingMsgIndex] = useState(0);
   const [importedEvents, setImportedEvents] = useState<ImportedMatchEvent[]>([]);
   
+  const [includePlayerRatings, setIncludePlayerRatings] = useState(false);
+  const [activeRatedPlayerIds, setActiveRatedPlayerIds] = useState<Record<string, boolean>>({});
+
   const [newMatch, setNewMatch] = useState<{
     opponent: string;
     date: string;
@@ -60,21 +63,11 @@ export const MatchEvaluation: React.FC = () => {
       setPlayers(p);
       setMatches(m);
       
-      const initialFeedbacks = p.reduce((acc, player) => ({
-        ...acc,
-        [player.id]: {
-          playerId: player.id,
-          effort: 3,
-          teamwork: 3,
-          learning: 3,
-          strengths: '',
-          improvements: ''
-        }
-      }), {});
-
+      // We do NOT prefill fake 3/5 ratings for all players anymore.
+      // Individual player feedback is optional and only saved if coach grades them.
       setNewMatch(prev => ({
         ...prev,
-        feedbacks: initialFeedbacks
+        feedbacks: {}
       }));
     } finally {
       setLoading(false);
@@ -124,6 +117,15 @@ export const MatchEvaluation: React.FC = () => {
   const saveMatch = async () => {
     if (!newMatch.opponent) return;
     setLoading(true);
+
+    // Only include feedbacks if coach enabled them and rated players
+    let finalFeedbacks: MatchFeedback[] = [];
+    if (includePlayerRatings) {
+      finalFeedbacks = Object.entries(newMatch.feedbacks)
+        .filter(([playerId]) => activeRatedPlayerIds[playerId] !== false)
+        .map(([_, fb]) => fb);
+    }
+
     await dataService.saveMatch({
       date: newMatch.date,
       opponent: newMatch.opponent,
@@ -132,12 +134,14 @@ export const MatchEvaluation: React.FC = () => {
       teamSummary: newMatch.teamSummary,
       tacticalPlays: newMatch.tacticalPlays,
       shots: newMatch.shots,
-      feedbacks: Object.values(newMatch.feedbacks)
+      feedbacks: finalFeedbacks
     });
     
     await loadData();
     setIsAdding(false);
     setImportedEvents([]);
+    setIncludePlayerRatings(false);
+    setActiveRatedPlayerIds({});
     
     setNewMatch({
       opponent: '',
@@ -147,28 +151,29 @@ export const MatchEvaluation: React.FC = () => {
       teamSummary: '',
       tacticalPlays: [],
       shots: [],
-      feedbacks: players.reduce((acc, p) => ({
-        ...acc,
-        [p.id]: {
-          playerId: p.id,
-          effort: 3,
-          teamwork: 3,
-          learning: 3,
-          strengths: '',
-          improvements: ''
-        }
-      }), {})
+      feedbacks: {}
     });
   };
 
   const updateFeedback = (playerId: string, field: keyof MatchFeedback, value: any) => {
-    setNewMatch(prev => ({
-      ...prev,
-      feedbacks: {
-        ...prev.feedbacks,
-        [playerId]: { ...prev.feedbacks[playerId], [field]: value }
-      }
-    }));
+    setNewMatch(prev => {
+      const current = prev.feedbacks[playerId] || {
+        playerId,
+        effort: 3,
+        teamwork: 3,
+        learning: 3,
+        strengths: '',
+        improvements: ''
+      };
+      return {
+        ...prev,
+        feedbacks: {
+          ...prev.feedbacks,
+          [playerId]: { ...current, [field]: value }
+        }
+      };
+    });
+    setActiveRatedPlayerIds(prev => ({ ...prev, [playerId]: true }));
   };
 
   if (loading && players.length === 0) {
@@ -301,45 +306,88 @@ export const MatchEvaluation: React.FC = () => {
               </div>
             </div>
 
-            <div className="space-y-6">
-              <h4 className="text-sm font-black text-emerald-400 uppercase tracking-tighter italic flex items-center gap-2">
-                <ClipboardPaste size={18} /> Individuell Bedömning (SISU)
-              </h4>
-              <div className="grid gap-4">
-                {players.map(p => (
-                  <div key={p.id} className="p-6 rounded-3xl bg-slate-950 border border-slate-800 space-y-6">
-                    <div className="flex items-center gap-4 border-b border-slate-900 pb-4">
-                      <div className="w-10 h-10 rounded-xl bg-orange-600 flex items-center justify-center font-black text-white italic">#{p.number}</div>
-                      <h5 className="text-lg font-black uppercase text-white italic">{p.name}</h5>
-                    </div>
-                    {newMatch.feedbacks[p.id] && (
-                      <div className="grid md:grid-cols-3 gap-6">
-                        <div className="space-y-3">
-                          <div className="flex justify-between items-center text-[9px] font-black text-slate-500 uppercase">
-                            <span className="flex items-center gap-1"><Zap size={12} className="text-yellow-500"/> Ansträngning</span>
-                            <span className="text-white">{newMatch.feedbacks[p.id].effort}/5</span>
-                          </div>
-                          <input type="range" min="1" max="5" value={newMatch.feedbacks[p.id].effort} onChange={e => updateFeedback(p.id, 'effort', parseInt(e.target.value))} className="w-full h-1.5 bg-slate-900 rounded-full appearance-none accent-orange-600" />
-                        </div>
-                        <div className="space-y-3">
-                          <div className="flex justify-between items-center text-[9px] font-black text-slate-500 uppercase">
-                            <span className="flex items-center gap-1"><Heart size={12} className="text-rose-500"/> Laganda</span>
-                            <span className="text-white">{newMatch.feedbacks[p.id].teamwork}/5</span>
-                          </div>
-                          <input type="range" min="1" max="5" value={newMatch.feedbacks[p.id].teamwork} onChange={e => updateFeedback(p.id, 'teamwork', parseInt(e.target.value))} className="w-full h-1.5 bg-slate-900 rounded-full appearance-none accent-rose-600" />
-                        </div>
-                        <div className="space-y-3">
-                          <div className="flex justify-between items-center text-[9px] font-black text-slate-500 uppercase">
-                            <span className="flex items-center gap-1"><Target size={12} className="text-emerald-500"/> Lärande</span>
-                            <span className="text-white">{newMatch.feedbacks[p.id].learning}/5</span>
-                          </div>
-                          <input type="range" min="1" max="5" value={newMatch.feedbacks[p.id].learning} onChange={e => updateFeedback(p.id, 'learning', parseInt(e.target.value))} className="w-full h-1.5 bg-slate-900 rounded-full appearance-none accent-emerald-600" />
-                        </div>
-                      </div>
-                    )}
+            <div className="space-y-6 border-t border-slate-800/80 pt-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-slate-950/60 border border-slate-800">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <ClipboardPaste size={18} className="text-emerald-400" />
+                    <h4 className="text-sm font-black text-white uppercase tracking-tight">
+                      Individuell Spelarbedömning (Valfritt)
+                    </h4>
                   </div>
-                ))}
+                  <p className="text-[11px] text-slate-400 font-medium">
+                    Avaktiverad som standard för ren resultat- och matchimport från Profixio utan påhittade betyg.
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                  <input 
+                    type="checkbox" 
+                    checked={includePlayerRatings} 
+                    onChange={e => setIncludePlayerRatings(e.target.checked)} 
+                    className="sr-only peer" 
+                  />
+                  <div className="w-12 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                </label>
               </div>
+
+              {includePlayerRatings && (
+                <div className="space-y-4 animate-in fade-in duration-300">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-2">
+                    Betygsätt de spelare som deltog i matchen (1–5)
+                  </p>
+                  <div className="grid gap-4">
+                    {players.map(p => {
+                      const fb = newMatch.feedbacks[p.id] || {
+                        playerId: p.id,
+                        effort: 3,
+                        teamwork: 3,
+                        learning: 3,
+                        strengths: '',
+                        improvements: ''
+                      };
+                      const isGraded = !!activeRatedPlayerIds[p.id];
+
+                      return (
+                        <div key={p.id} className="p-6 rounded-3xl bg-slate-950 border border-slate-800 space-y-6">
+                          <div className="flex items-center justify-between border-b border-slate-900 pb-4">
+                            <div className="flex items-center gap-4">
+                              <div className="w-10 h-10 rounded-xl bg-orange-600 flex items-center justify-center font-black text-white italic">#{p.number}</div>
+                              <h5 className="text-lg font-black uppercase text-white italic">{p.name}</h5>
+                            </div>
+                            <span className={`text-[9px] font-black uppercase px-2.5 py-1 rounded-lg ${isGraded ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-900 text-slate-500'}`}>
+                              {isGraded ? 'Betygsatt' : 'Ej betygsatt'}
+                            </span>
+                          </div>
+                          
+                          <div className="grid md:grid-cols-3 gap-6">
+                            <div className="space-y-3">
+                              <div className="flex justify-between items-center text-[9px] font-black text-slate-500 uppercase">
+                                <span className="flex items-center gap-1"><Zap size={12} className="text-yellow-500"/> Ansträngning</span>
+                                <span className="text-white">{fb.effort}/5</span>
+                              </div>
+                              <input type="range" min="1" max="5" value={fb.effort} onChange={e => updateFeedback(p.id, 'effort', parseInt(e.target.value))} className="w-full h-1.5 bg-slate-900 rounded-full appearance-none accent-orange-600" />
+                            </div>
+                            <div className="space-y-3">
+                              <div className="flex justify-between items-center text-[9px] font-black text-slate-500 uppercase">
+                                <span className="flex items-center gap-1"><Heart size={12} className="text-rose-500"/> Laganda</span>
+                                <span className="text-white">{fb.teamwork}/5</span>
+                              </div>
+                              <input type="range" min="1" max="5" value={fb.teamwork} onChange={e => updateFeedback(p.id, 'teamwork', parseInt(e.target.value))} className="w-full h-1.5 bg-slate-900 rounded-full appearance-none accent-rose-600" />
+                            </div>
+                            <div className="space-y-3">
+                              <div className="flex justify-between items-center text-[9px] font-black text-slate-500 uppercase">
+                                <span className="flex items-center gap-1"><Target size={12} className="text-emerald-500"/> Lärande</span>
+                                <span className="text-white">{fb.learning}/5</span>
+                              </div>
+                              <input type="range" min="1" max="5" value={fb.learning} onChange={e => updateFeedback(p.id, 'learning', parseInt(e.target.value))} className="w-full h-1.5 bg-slate-900 rounded-full appearance-none accent-emerald-600" />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-4">
