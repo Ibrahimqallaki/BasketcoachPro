@@ -84,13 +84,21 @@ app.post('/api/gemini/chat', async (req, res) => {
 app.post('/api/gemini/parse-match-text', async (req, res) => {
   try {
     const { rawText } = req.body;
-    const optimizedText = rawText && rawText.length > 5000 ? rawText.substring(0, 5000) : rawText;
+    const optimizedText = rawText && rawText.length > 8000 ? rawText.substring(0, 8000) : rawText;
 
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
-      contents: `Extract basketball match data for Orion HU14 from this text: "${optimizedText}"`,
+      contents: `Extract basketball match data for Orion (or user's team) from this Profixio or match text:
+"${optimizedText}"
+
+Instructions:
+1. Identify opponent name.
+2. Identify score (our score) and opponentScore (their score).
+3. Identify match date in format YYYY-MM-DD (or best guess).
+4. Extract at most 20 major match events or period scores (do not list hundreds of minor lines to avoid truncation).
+Output valid JSON adhering to schema.`,
       config: {
-        systemInstruction: 'Strict data extractor. Fields: opponent (string), score (number), opponentScore (number), date (YYYY-MM-DD), events (array of {time, description, team}). Output JSON only.',
+        systemInstruction: 'Strict data extractor for basketball matches. Extract opponent, score, opponentScore, date, and up to 20 key events. Return valid JSON only.',
         temperature: 0,
         thinkingConfig: { thinkingBudget: 0 },
         responseMimeType: 'application/json',
@@ -117,8 +125,26 @@ app.post('/api/gemini/parse-match-text', async (req, res) => {
       },
     });
 
-    const parsed = JSON.parse(response.text || '{}');
-    res.json(parsed);
+    const rawOutput = (response.text || '{}').trim();
+    try {
+      const parsed = JSON.parse(rawOutput);
+      return res.json(parsed);
+    } catch (parseErr) {
+      console.warn("Direct JSON.parse failed on model output, attempting repair...", parseErr);
+      // Fallback repair: extract top-level properties with regex if truncated
+      const opponentMatch = rawOutput.match(/"opponent"\s*:\s*"([^"]+)"/);
+      const scoreMatch = rawOutput.match(/"score"\s*:\s*(\d+)/);
+      const oppScoreMatch = rawOutput.match(/"opponentScore"\s*:\s*(\d+)/);
+      const dateMatch = rawOutput.match(/"date"\s*:\s*"([^"]+)"/);
+
+      return res.json({
+        opponent: opponentMatch ? opponentMatch[1] : "Okänd Motståndare",
+        score: scoreMatch ? parseInt(scoreMatch[1]) : 0,
+        opponentScore: oppScoreMatch ? parseInt(oppScoreMatch[1]) : 0,
+        date: dateMatch ? dateMatch[1] : new Date().toISOString().split('T')[0],
+        events: []
+      });
+    }
   } catch (error: any) {
     console.error('Error parsing match text:', error);
     res.status(500).json({ error: error.message || 'Parsing error' });
@@ -142,7 +168,7 @@ app.post('/api/gemini/parse-match-image', async (req, res) => {
             },
           },
           {
-            text: 'Extract basketball data. JSON fields: opponent, score, opponentScore, date, events.',
+            text: 'Extract basketball match data. Identify opponent, score, opponentScore, date (YYYY-MM-DD), and at most 20 major events.',
           },
         ],
       },
@@ -172,8 +198,25 @@ app.post('/api/gemini/parse-match-image', async (req, res) => {
       },
     });
 
-    const parsed = JSON.parse(response.text || '{}');
-    res.json(parsed);
+    const rawOutput = (response.text || '{}').trim();
+    try {
+      const parsed = JSON.parse(rawOutput);
+      return res.json(parsed);
+    } catch (parseErr) {
+      console.warn("Direct JSON.parse failed on screenshot output, attempting repair...", parseErr);
+      const opponentMatch = rawOutput.match(/"opponent"\s*:\s*"([^"]+)"/);
+      const scoreMatch = rawOutput.match(/"score"\s*:\s*(\d+)/);
+      const oppScoreMatch = rawOutput.match(/"opponentScore"\s*:\s*(\d+)/);
+      const dateMatch = rawOutput.match(/"date"\s*:\s*"([^"]+)"/);
+
+      return res.json({
+        opponent: opponentMatch ? opponentMatch[1] : "Okänd Motståndare",
+        score: scoreMatch ? parseInt(scoreMatch[1]) : 0,
+        opponentScore: oppScoreMatch ? parseInt(oppScoreMatch[1]) : 0,
+        date: dateMatch ? dateMatch[1] : new Date().toISOString().split('T')[0],
+        events: []
+      });
+    }
   } catch (error: any) {
     console.error('Error parsing match screenshot:', error);
     res.status(500).json({ error: error.message || 'Screenshot parsing error' });
