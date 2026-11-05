@@ -40,6 +40,10 @@ export const MatchEvaluation: React.FC = () => {
     score: string;
     opponentScore: string;
     teamSummary: string;
+    whatWorked: string;
+    whatToImprove: string;
+    nextTrainingFocus: string;
+    profixioMatchId?: string;
     tacticalPlays: string[];
     shots: Shot[];
     feedbacks: Record<string, MatchFeedback>;
@@ -49,6 +53,9 @@ export const MatchEvaluation: React.FC = () => {
     score: '',
     opponentScore: '',
     teamSummary: '',
+    whatWorked: '',
+    whatToImprove: '',
+    nextTrainingFocus: '',
     tacticalPlays: [],
     shots: [],
     feedbacks: {}
@@ -131,6 +138,10 @@ export const MatchEvaluation: React.FC = () => {
       score: match.score?.toString() || '0',
       opponentScore: match.opponentScore?.toString() || '0',
       teamSummary: match.teamSummary || '',
+      whatWorked: match.whatWorked || '',
+      whatToImprove: match.whatToImprove || '',
+      nextTrainingFocus: match.nextTrainingFocus || '',
+      profixioMatchId: match.profixioMatchId,
       tacticalPlays: match.tacticalPlays || [],
       shots: match.shots || [],
       feedbacks: fbMap
@@ -160,6 +171,10 @@ export const MatchEvaluation: React.FC = () => {
       score: parseInt(newMatch.score) || 0,
       opponentScore: parseInt(newMatch.opponentScore) || 0,
       teamSummary: newMatch.teamSummary,
+      whatWorked: newMatch.whatWorked.trim() || undefined,
+      whatToImprove: newMatch.whatToImprove.trim() || undefined,
+      nextTrainingFocus: newMatch.nextTrainingFocus.trim() || undefined,
+      profixioMatchId: newMatch.profixioMatchId,
       tacticalPlays: newMatch.tacticalPlays,
       shots: newMatch.shots,
       feedbacks: finalFeedbacks
@@ -184,6 +199,9 @@ export const MatchEvaluation: React.FC = () => {
       score: '',
       opponentScore: '',
       teamSummary: '',
+      whatWorked: '',
+      whatToImprove: '',
+      nextTrainingFocus: '',
       tacticalPlays: [],
       shots: [],
       feedbacks: {}
@@ -225,7 +243,7 @@ export const MatchEvaluation: React.FC = () => {
       <div className="flex items-center justify-between px-1">
         <div>
           <h3 className="text-xl md:text-3xl font-black italic uppercase tracking-tighter">Matchanalys</h3>
-          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Orion HU14 Intelligence</p>
+          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Orion HU15 Intelligence</p>
         </div>
         {!isAdding && !selectedMatch && (
           <button 
@@ -336,6 +354,57 @@ export const MatchEvaluation: React.FC = () => {
                     onChange={e => setNewMatch({...newMatch, opponentScore: e.target.value})}
                     placeholder="0"
                     className="w-24 h-24 bg-slate-900 border-2 border-slate-800 rounded-[2rem] text-4xl font-black text-white text-center focus:border-orange-500 outline-none shadow-xl"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* KORT MATCHREFLEKTION FÖR TRÄNINGSUNDERLAG */}
+            <div className="p-6 rounded-3xl bg-slate-950 border border-slate-800 space-y-4">
+              <div className="flex items-center gap-2">
+                <Target size={18} className="text-orange-500" />
+                <h4 className="text-sm font-black text-white uppercase tracking-tight">
+                  Coach Matchreflektion (Underlag för nästa träning)
+                </h4>
+              </div>
+              <p className="text-[11px] text-slate-400 font-medium">
+                3 snabba frågor som ger dig och AI:n underlag för att direkt planera vad ni ska träna på härnäst.
+              </p>
+
+              <div className="grid md:grid-cols-3 gap-4 pt-2">
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black text-emerald-400 uppercase tracking-widest flex items-center gap-1.5">
+                    <Check size={12} /> 1. Vad fungerade bäst?
+                  </label>
+                  <textarea 
+                    value={newMatch.whatWorked}
+                    onChange={e => setNewMatch({ ...newMatch, whatWorked: e.target.value })}
+                    placeholder="T.ex. Vårt helplansförsvar och snabba uppspel..."
+                    className="w-full h-24 bg-slate-900 border border-slate-800 rounded-2xl p-3 text-xs text-white placeholder:text-slate-600 outline-none focus:border-emerald-500 transition-colors resize-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black text-amber-400 uppercase tracking-widest flex items-center gap-1.5">
+                    <AlertCircle size={12} /> 2. Vad behöver förbättras?
+                  </label>
+                  <textarea 
+                    value={newMatch.whatToImprove}
+                    onChange={e => setNewMatch({ ...newMatch, whatToImprove: e.target.value })}
+                    placeholder="T.ex. Returtagning mot zon och passningar under press..."
+                    className="w-full h-24 bg-slate-900 border border-slate-800 rounded-2xl p-3 text-xs text-white placeholder:text-slate-600 outline-none focus:border-amber-500 transition-colors resize-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black text-orange-400 uppercase tracking-widest flex items-center gap-1.5">
+                    <Zap size={12} /> 3. Nästa träningsfokus?
+                  </label>
+                  <textarea 
+                    value={newMatch.nextTrainingFocus}
+                    onChange={e => setNewMatch({ ...newMatch, nextTrainingFocus: e.target.value })}
+                    placeholder="T.ex. Boxout-drills och 3v2 pressbryt på torsdag..."
+                    className="w-full h-24 bg-slate-900 border border-slate-800 rounded-2xl p-3 text-xs text-white placeholder:text-slate-600 outline-none focus:border-orange-500 transition-colors resize-none"
                   />
                 </div>
               </div>
@@ -492,10 +561,39 @@ export const MatchEvaluation: React.FC = () => {
                 <div className="grid md:grid-cols-2 gap-8 border-t border-slate-800/50 pt-10">
                     <div className="space-y-6">
                         <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                             <ClipboardPaste size={14} className="text-indigo-400" /> Matchrapport
+                             <ClipboardPaste size={14} className="text-indigo-400" /> Matchrapport & Reflektion
                         </h4>
-                        <div className="p-6 rounded-[2rem] bg-slate-950 border border-slate-800 min-h-[120px]">
+                        <div className="p-6 rounded-[2rem] bg-slate-950 border border-slate-800 space-y-4">
                             <p className="text-sm text-slate-300 leading-relaxed font-medium italic">"{selectedMatch.teamSummary || "Ingen sammanfattning skriven."}"</p>
+                            
+                            {(selectedMatch.whatWorked || selectedMatch.whatToImprove || selectedMatch.nextTrainingFocus) && (
+                              <div className="grid gap-3 pt-3 border-t border-slate-900">
+                                {selectedMatch.whatWorked && (
+                                  <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/80">
+                                    <span className="text-[9px] font-black uppercase text-emerald-400 tracking-wider flex items-center gap-1.5 mb-1">
+                                      <Check size={11} /> Vad fungerade bäst:
+                                    </span>
+                                    <p className="text-xs text-slate-300 font-medium">{selectedMatch.whatWorked}</p>
+                                  </div>
+                                )}
+                                {selectedMatch.whatToImprove && (
+                                  <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/80">
+                                    <span className="text-[9px] font-black uppercase text-amber-400 tracking-wider flex items-center gap-1.5 mb-1">
+                                      <AlertCircle size={11} /> Vad behöver förbättras:
+                                    </span>
+                                    <p className="text-xs text-slate-300 font-medium">{selectedMatch.whatToImprove}</p>
+                                  </div>
+                                )}
+                                {selectedMatch.nextTrainingFocus && (
+                                  <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/80">
+                                    <span className="text-[9px] font-black uppercase text-orange-400 tracking-wider flex items-center gap-1.5 mb-1">
+                                      <Zap size={11} /> Nästa träningsfokus:
+                                    </span>
+                                    <p className="text-xs text-slate-300 font-medium">{selectedMatch.nextTrainingFocus}</p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                         </div>
                     </div>
 

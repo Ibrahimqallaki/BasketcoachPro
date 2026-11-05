@@ -251,6 +251,10 @@ export interface MatchRecord {
   opponentScore: number;
   feedbacks: MatchFeedback[];
   teamSummary: string;
+  whatWorked?: string;
+  whatToImprove?: string;
+  nextTrainingFocus?: string;
+  profixioMatchId?: string;
   strategyImage?: string; 
   tacticalPlays?: string[]; 
   shots?: Shot[]; 

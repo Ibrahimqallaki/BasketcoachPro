@@ -274,10 +274,43 @@ export const Dashboard: React.FC<{
   }, [matches]);
 
   const stats = [
-    { label: 'Närvaro', value: `${attendanceRate}%`, subtext: 'Snitt per pass', icon: Activity, gradient: 'from-emerald-600 to-emerald-400', border: 'border-emerald-500/20', bg: 'bg-emerald-500/10' },
-    { label: 'Matchform', value: matches.length > 0 ? `${matchStats.winRate}%` : '-', subtext: `${matchStats.wins}V - ${matchStats.losses}F`, icon: Trophy, gradient: 'from-yellow-500 to-orange-500', border: 'border-yellow-500/20', bg: 'bg-yellow-500/10' },
-    { label: 'Fys-volym', value: `${fysStats.count} st`, subtext: `${fysStats.ratio}% av fokus`, icon: Dumbbell, gradient: 'from-blue-600 to-cyan-400', border: 'border-blue-500/20', bg: 'bg-blue-500/10' },
-    { label: 'Utvecklingsindex', value: developmentInsights.index, subtext: 'Genomsnittlig nivå', trend: developmentInsights.trend, icon: TrendingUp, gradient: 'from-purple-600 to-purple-400', border: 'border-purple-500/20', bg: 'bg-purple-500/10' },
+    { 
+      label: 'Närvaro', 
+      value: sessions.length > 0 ? `${attendanceRate}%` : '-', 
+      subtext: sessions.length === 0 ? 'Inga pass registrerade' : sessions.length === 1 ? '1 registrerat pass' : `${sessions.length} registrerade pass`, 
+      icon: Activity, 
+      gradient: 'from-emerald-600 to-emerald-400', 
+      border: 'border-emerald-500/20', 
+      bg: 'bg-emerald-500/10' 
+    },
+    { 
+      label: 'Matchform', 
+      value: matches.length > 0 ? `${matchStats.winRate}%` : '-', 
+      subtext: matches.length === 0 ? 'Inga matcher' : `${matchStats.wins}V - ${matchStats.losses}F (${matches.length} matcher)`, 
+      icon: Trophy, 
+      gradient: 'from-yellow-500 to-orange-500', 
+      border: 'border-yellow-500/20', 
+      bg: 'bg-yellow-500/10' 
+    },
+    { 
+      label: 'Fys-volym', 
+      value: `${fysStats.count} st`, 
+      subtext: sessions.length === 0 ? 'Inga pass' : `${fysStats.ratio}% av genomförda moment`, 
+      icon: Dumbbell, 
+      gradient: 'from-blue-600 to-cyan-400', 
+      border: 'border-blue-500/20', 
+      bg: 'bg-blue-500/10' 
+    },
+    { 
+      label: 'Utvecklingsindex', 
+      value: sessions.flatMap(s => s.evaluations).length > 0 ? developmentInsights.index : '-', 
+      subtext: sessions.flatMap(s => s.evaluations).length === 0 ? 'Inga bedömningar än' : `Baserat på ${sessions.flatMap(s => s.evaluations).length} bedömningar`, 
+      trend: developmentInsights.trend, 
+      icon: TrendingUp, 
+      gradient: 'from-purple-600 to-purple-400', 
+      border: 'border-purple-500/20', 
+      bg: 'bg-purple-500/10' 
+    },
   ];
 
   if (loading) return <div className="h-full w-full flex flex-col items-center justify-center space-y-4"><Loader2 className="w-12 h-12 text-orange-500 animate-spin" /><p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Laddar statistik...</p></div>;

@@ -427,6 +427,30 @@ app.post('/api/gemini/generate-image', async (req, res) => {
   }
 });
 
+// 10. REST API v1 for ChatGPT Plugin, Voice Assistant, and External Integrations
+app.get('/api/v1/team-summary', async (req, res) => {
+  res.json({
+    team: 'Orion HU15',
+    category: 'Pojkar 14-15 år (HU15)',
+    coach: 'Ibrahim Qallaki',
+    standardPracticeMinutes: 90,
+    currentThemes: ['Pick & Roll', 'Helplanspressbryt', 'Defensiva returer', '5-Out rörelse']
+  });
+});
+
+app.get('/api/v1/exercises', async (req, res) => {
+  try {
+    const mockDataFile = path.join(__dirname, 'services/mockData.ts');
+    // Basic exercise metadata endpoint
+    res.json({
+      categories: ['Skott', 'Dribbling', 'Passningar', 'Försvar', 'Kondition', 'Basket-IQ', 'Fysik', 'Uppvärmning'],
+      message: 'Bibliotek tillgängligt via appens dataService'
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Dev / Prod Vite handling
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production' && fs.existsSync(path.resolve(__dirname, 'dist', 'index.html'));
