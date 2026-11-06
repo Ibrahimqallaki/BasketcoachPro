@@ -1,51 +1,10 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    function isCoach(coachId) {
-      return isAuthenticated() && request.auth.uid == coachId;
-    }
-
-    function isAdmin() {
-      return isAuthenticated() && 
-        (request.auth.token.email == "ibrahim.qallaki@gmail.com" && request.auth.token.email_verified == true);
-    }
-
-    // App Settings / Whitelist
-    match /app_settings/{document=**} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    // Coach and Team Data (Players, Matches, Planned Sessions, Sessions, Chat)
-    match /users/{coachId} {
-      allow read, write: if true;
-
-      match /{allSubcollections=**} {
-        allow read, write: if true;
-      }
-    }
-
-    // Collection Group / Deep matching for all team resources
-    match /{path=**}/players/{playerId} {
-      allow read, write: if true;
-    }
-    match /{path=**}/matches/{matchId} {
-      allow read, write: if true;
-    }
-    match /{path=**}/planned_sessions/{sessionId} {
-      allow read, write: if true;
-    }
-    match /{path=**}/sessions/{sessionId} {
-      allow read, write: if true;
-    }
-    match /{path=**}/messages/{messageId} {
+    match /{document=**} {
       allow read, write: if true;
     }
   }
 }
+
 

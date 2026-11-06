@@ -1,5 +1,5 @@
 
-import { Player, TrainingSession, PlannedSession, MatchRecord, Homework, Phase, Exercise, AppTicket, TicketStatus, WarmupExercise, CANONICAL_COACH_ID } from '../types';
+import { Player, TrainingSession, PlannedSession, MatchRecord, Homework, Phase, Exercise, AppTicket, TicketStatus, WarmupExercise } from '../types';
 import { mockPlayers, mockPhases, mockWarmupExercises } from './mockData';
 import { db, auth, isFirebaseConfigured } from './firebase';
 // Fix: Added @ts-ignore to bypass environment-specific resolution issues with Firebase exports
@@ -106,13 +106,7 @@ export const dataService = {
   getUserPath: () => {
     if (!isFirebaseConfigured || !db) return null;
     const user = auth.currentUser;
-    // Default to canonical coach profile for Ibrahim Qallaki or unauthenticated/guest coach
-    if (!user || user.uid === 'guest' || user.isAnonymous) {
-      return `users/${CANONICAL_COACH_ID}`;
-    }
-    if (user.email && user.email.toLowerCase().trim() === SUPER_ADMIN_EMAIL) {
-      return `users/${CANONICAL_COACH_ID}`;
-    }
+    if (!user || user.uid === 'guest' || user.isAnonymous) return null;
     return `users/${user.uid}`;
   },
 
@@ -638,5 +632,72 @@ export const dataService = {
     // För enkelhetens skull kör vi bara mock-data för uppvärmning just nu, 
     // men förberett för Firestore om det behövs senare.
     return mockWarmupExercises;
+  },
+
+  syncLocalToCloud: async (): Promise<{ playersCount: number, matchesCount: number, sessionsCount: number }> => {
+    const path = dataService.getUserPath();
+    if (!path || !db) return { playersCount: 0, matchesCount: 0, sessionsCount: 0 };
+    
+    let playersCount = 0;
+    let matchesCount = 0;
+    let sessionsCount = 0;
+
+    const storedPlayers = localStorage.getItem(PLAYERS_KEY);
+    if (storedPlayers) {
+      const players: Player[] = JSON.parse(storedPlayers);
+      for (const p of players) {
+        const { id, ...pData } = p;
+        const docRef = id ? doc(db, `${path}/players`, id) : doc(collection(db, `${path}/players`));
+        await setDoc(docRef, cleanFirestorePayload({ ...pData, id: docRef.id, updated_at: new Date().toISOString() }), { merge: true });
+        playersCount++;
+      }
+    }
+
+    const storedMatches = localStorage.getItem(MATCHES_KEY);
+    if (storedMatches) {
+      const matches: MatchRecord[] = JSON.parse(storedMatches);
+      for (const m of matches) {
+        const { id, ...mData } = m;
+        const docRef = id ? doc(db, `${path}/matches`, id) : doc(collection(db, `${path}/matches`));
+        await setDoc(docRef, cleanFirestorePayload({ ...mData, id: docRef.id, updated_at: new Date().toISOString() }), { merge: true });
+        matchesCount++;
+      }
+    }
+
+    const storedPlanned = localStorage.getItem(PLANNED_SESSIONS_KEY);
+    if (storedPlanned) {
+      const planned: PlannedSession[] = JSON.parse(storedPlanned);
+      for (const ps of planned) {
+        const { id, ...psData } = ps;
+        const docRef = id ? doc(db, `${path}/planned_sessions`, id) : doc(collection(db, `${path}/planned_sessions`));
+        await setDoc(docRef, cleanFirestorePayload({ ...psData, id: docRef.id, updated_at: new Date().toISOString() }), { merge: true });
+      }
+    }
+
+    const storedSessions = localStorage.getItem(SESSIONS_KEY);
+    if (storedSessions) {
+      const sessions: TrainingSession[] = JSON.parse(storedSessions);
+      for (const s of sessions) {
+        const { id, ...sData } = s;
+        const docRef = id ? doc(db, `${path}/sessions`, id) : doc(collection(db, `${path}/sessions`));
+        await setDoc(docRef, cleanFirestorePayload({ ...sData, id: docRef.id, updated_at: new Date().toISOString() }), { merge: true });
+        sessionsCount++;
+      }
+    }
+
+    return { playersCount, matchesCount, sessionsCount };
+  },
+
+  syncLocalToCloudIfEmpty: async (): Promise<void> => {
+    const path = dataService.getUserPath();
+    if (!path || !db) return;
+    try {
+      const playersSnap = await getDocs(collection(db, `${path}/players`));
+      if (playersSnap.empty) {
+        await dataService.syncLocalToCloud();
+      }
+    } catch (err) {
+      console.warn("Auto-sync local to cloud note:", err);
+    }
   }
 };

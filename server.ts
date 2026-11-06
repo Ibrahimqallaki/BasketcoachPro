@@ -7,9 +7,9 @@ import fs from 'fs';
 import { mockPhases, mockWarmupExercises } from './services/mockData';
 import { 
   serverDb, 
-  CANONICAL_COACH_ID, 
-  ensureFirestoreInitialized, 
-  cleanFirestoreData 
+  cleanFirestoreData, 
+  resolveAuthenticatedCoach, 
+  sanitizePlayerForApi 
 } from './services/firestoreDb';
 import { 
   collection, 
@@ -446,16 +446,29 @@ app.post('/api/gemini/generate-image', async (req, res) => {
   }
 });
 
-// Helper to extract coachId
-const getTargetCoachId = (req: express.Request): string => {
-  return (req.query.coachId as string) || (req.body?.coachId as string) || CANONICAL_COACH_ID;
+// Helper to enforce coach authentication on private endpoints
+const requireCoachAuth = (req: express.Request, res: express.Response): string | null => {
+  const authCoach = resolveAuthenticatedCoach(req);
+  if (!authCoach || !authCoach.coachId) {
+    res.status(401).json({
+      error: "Behörighet saknas. Ange giltig Firebase-autentisering (Bearer token, x-coach-uid header eller coachId query parameter)."
+    });
+    return null;
+  }
+  return authCoach.coachId;
 };
 
 // 10. REST API v1 for ChatGPT Plugin, Voice Assistant, and External Integrations
 app.get('/api/v1/team-summary', async (req, res) => {
   try {
-    const coachId = getTargetCoachId(req);
-    await ensureFirestoreInitialized(coachId);
+    const coachId = requireCoachAuth(req, res);
+    if (!coachId) return;
+
+    let coachInfo: any = {};
+    try {
+      const coachSnap = await getDoc(doc(serverDb, `users/${coachId}`));
+      if (coachSnap.exists()) coachInfo = coachSnap.data();
+    } catch (e) {}
 
     // 1. Matches
     const matchesCol = collection(serverDb, `users/${coachId}/matches`);
@@ -470,7 +483,8 @@ app.get('/api/v1/team-summary', async (req, res) => {
     // 3. Players
     const playersCol = collection(serverDb, `users/${coachId}/players`);
     const playersSnap = await getDocs(query(playersCol, orderBy('number', 'asc')));
-    const players = playersSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+    const rawPlayers = playersSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+    const safePlayers = rawPlayers.map(sanitizePlayerForApi);
 
     // 4. Completed Sessions
     const sessionsCol = collection(serverDb, `users/${coachId}/sessions`);
@@ -481,20 +495,19 @@ app.get('/api/v1/team-summary', async (req, res) => {
     const upcoming = plannedSessions.filter(s => s.status === 'planned');
 
     res.json({
-      team: 'Orion HU15',
+      team: coachInfo.team || 'Orion HU15',
       category: 'Pojkar 14-15 år (HU15)',
-      coach: 'Ibrahim Qallaki',
+      coach: coachInfo.name || coachInfo.email || 'Ibrahim Qallaki',
       coachId,
       standardPracticeMinutes: 90,
       currentThemes: ['Pick & Roll', 'Helplanspressbryt', 'Defensiva returer', '5-Out rörelse'],
       rosterSummary: {
-        totalPlayers: players.length,
-        players: players.map(p => ({
+        totalPlayers: safePlayers.length,
+        players: safePlayers.map(p => ({
           id: p.id,
           name: p.name,
           number: p.number,
-          position: p.position,
-          accessCode: p.accessCode
+          position: p.position
         }))
       },
       stats: {
@@ -535,11 +548,12 @@ app.get('/api/v1/team-summary', async (req, res) => {
 
 app.get('/api/v1/players', async (req, res) => {
   try {
-    const coachId = getTargetCoachId(req);
-    await ensureFirestoreInitialized(coachId);
+    const coachId = requireCoachAuth(req, res);
+    if (!coachId) return;
+
     const playersCol = collection(serverDb, `users/${coachId}/players`);
     const snap = await getDocs(query(playersCol, orderBy('number', 'asc')));
-    const players = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const players = snap.docs.map(d => sanitizePlayerForApi({ id: d.id, ...d.data() }));
     res.json({
       total: players.length,
       players
@@ -601,8 +615,9 @@ app.get('/api/v1/exercises', async (req, res) => {
 
 app.get('/api/v1/matches', async (req, res) => {
   try {
-    const coachId = getTargetCoachId(req);
-    await ensureFirestoreInitialized(coachId);
+    const coachId = requireCoachAuth(req, res);
+    if (!coachId) return;
+
     const matchesCol = collection(serverDb, `users/${coachId}/matches`);
     const snap = await getDocs(query(matchesCol, orderBy('date', 'desc')));
     const matches = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -618,8 +633,8 @@ app.get('/api/v1/matches', async (req, res) => {
 
 app.post('/api/v1/matches', async (req, res) => {
   try {
-    const coachId = getTargetCoachId(req);
-    await ensureFirestoreInitialized(coachId);
+    const coachId = requireCoachAuth(req, res);
+    if (!coachId) return;
 
     const docId = req.body.id || `match_${req.body.date ? req.body.date.replace(/-/g, '') : Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const matchData = cleanFirestoreData({
@@ -648,8 +663,9 @@ app.post('/api/v1/matches', async (req, res) => {
 
 app.put('/api/v1/matches/:id', async (req, res) => {
   try {
-    const coachId = getTargetCoachId(req);
-    await ensureFirestoreInitialized(coachId);
+    const coachId = requireCoachAuth(req, res);
+    if (!coachId) return;
+
     const matchId = req.params.id;
     const updates = cleanFirestoreData({
       ...req.body,
@@ -668,8 +684,9 @@ app.put('/api/v1/matches/:id', async (req, res) => {
 
 app.get('/api/v1/planned-sessions', async (req, res) => {
   try {
-    const coachId = getTargetCoachId(req);
-    await ensureFirestoreInitialized(coachId);
+    const coachId = requireCoachAuth(req, res);
+    if (!coachId) return;
+
     const plannedCol = collection(serverDb, `users/${coachId}/planned_sessions`);
     const snap = await getDocs(query(plannedCol, orderBy('date', 'asc')));
     const plannedSessions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -685,8 +702,8 @@ app.get('/api/v1/planned-sessions', async (req, res) => {
 
 app.post('/api/v1/planned-sessions', async (req, res) => {
   try {
-    const coachId = getTargetCoachId(req);
-    await ensureFirestoreInitialized(coachId);
+    const coachId = requireCoachAuth(req, res);
+    if (!coachId) return;
 
     const docId = req.body.id || `planned_${req.body.date ? req.body.date.replace(/-/g, '') : Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const sessionData = cleanFirestoreData({
@@ -713,8 +730,9 @@ app.post('/api/v1/planned-sessions', async (req, res) => {
 
 app.put('/api/v1/planned-sessions/:id', async (req, res) => {
   try {
-    const coachId = getTargetCoachId(req);
-    await ensureFirestoreInitialized(coachId);
+    const coachId = requireCoachAuth(req, res);
+    if (!coachId) return;
+
     const sessionId = req.params.id;
     const updates = cleanFirestoreData({
       ...req.body,
@@ -733,8 +751,9 @@ app.put('/api/v1/planned-sessions/:id', async (req, res) => {
 
 app.delete('/api/v1/planned-sessions/:id', async (req, res) => {
   try {
-    const coachId = getTargetCoachId(req);
-    await ensureFirestoreInitialized(coachId);
+    const coachId = requireCoachAuth(req, res);
+    if (!coachId) return;
+
     await deleteDoc(doc(serverDb, `users/${coachId}/planned_sessions`, req.params.id));
     res.json({ success: true, deletedId: req.params.id });
   } catch (err: any) {
@@ -745,8 +764,9 @@ app.delete('/api/v1/planned-sessions/:id', async (req, res) => {
 
 app.delete('/api/v1/matches/:id', async (req, res) => {
   try {
-    const coachId = getTargetCoachId(req);
-    await ensureFirestoreInitialized(coachId);
+    const coachId = requireCoachAuth(req, res);
+    if (!coachId) return;
+
     await deleteDoc(doc(serverDb, `users/${coachId}/matches`, req.params.id));
     res.json({ success: true, deletedId: req.params.id });
   } catch (err: any) {
@@ -757,12 +777,6 @@ app.delete('/api/v1/matches/:id', async (req, res) => {
 
 // Dev / Prod Vite handling
 async function startServer() {
-  try {
-    await ensureFirestoreInitialized();
-    console.log('Firestore initialized with canonical coach data.');
-  } catch (initErr) {
-    console.warn('Initial Firestore seeding warning:', initErr);
-  }
 
   const isProd = process.env.NODE_ENV === 'production' && fs.existsSync(path.resolve(__dirname, 'dist', 'index.html'));
 

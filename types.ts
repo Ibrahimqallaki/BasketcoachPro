@@ -1,6 +1,4 @@
 
-export const CANONICAL_COACH_ID = 'coach_ibrahim_qallaki';
-
 export enum View {
   DASHBOARD = 'DASHBOARD',
   ROSTER = 'ROSTER',

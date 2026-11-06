@@ -126,6 +126,30 @@ export const Account: React.FC<AccountProps> = ({ user }) => {
   const [testResult, setTestResult] = useState<{status: 'success' | 'error' | 'idle', message: string}>({ status: 'idle', message: '' });
   const [isTesting, setIsTesting] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+  const [syncingCloud, setSyncingCloud] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [uidCopied, setUidCopied] = useState(false);
+
+  const handleManualSync = async () => {
+    setSyncingCloud(true);
+    setSyncResult(null);
+    try {
+      const res = await dataService.syncLocalToCloud();
+      setSyncResult(`Synkade ${res.playersCount} spelare och ${res.matchesCount} matcher till ditt Firebase-konto.`);
+    } catch (err: any) {
+      setSyncResult(`Synkfel: ${err.message}`);
+    } finally {
+      setSyncingCloud(false);
+    }
+  };
+
+  const copyUid = () => {
+    if (user?.uid) {
+      navigator.clipboard.writeText(user.uid);
+      setUidCopied(true);
+      setTimeout(() => setUidCopied(false), 2000);
+    }
+  };
 
   const isGuest = !user || user.uid === 'guest';
   
@@ -553,7 +577,7 @@ service cloud.firestore {
               <h3 className="text-xs font-black text-white italic uppercase tracking-widest flex items-center gap-2">
                   <Database size={18} className="text-orange-500" /> Lagdata & Backup
               </h3>
-              <div className="grid md:grid-cols-2 gap-4">
+              <div className="grid md:grid-cols-3 gap-4">
                   <button onClick={() => dataService.exportTeamData()} className="p-5 rounded-2xl bg-slate-950 border border-slate-800 hover:border-blue-500/50 transition-all flex items-center gap-4 shadow-inner">
                       <div className="p-3 bg-blue-500/10 text-blue-500 rounded-xl"><Download size={20} /></div>
                       <div className="text-left">
@@ -576,6 +600,46 @@ service cloud.firestore {
                           }
                       }} />
                   </label>
+                  <button 
+                    onClick={handleManualSync} 
+                    disabled={syncingCloud}
+                    className="p-5 rounded-2xl bg-slate-950 border border-slate-800 hover:border-orange-500/50 transition-all flex items-center gap-4 shadow-inner disabled:opacity-50"
+                  >
+                      <div className="p-3 bg-orange-500/10 text-orange-500 rounded-xl">
+                        {syncingCloud ? <Loader2 size={20} className="animate-spin" /> : <RefreshCw size={20} />}
+                      </div>
+                      <div className="text-left">
+                        <div className="text-[10px] font-black text-white uppercase">Synka till Molnet</div>
+                        <div className="text-[8px] text-slate-500 font-bold uppercase mt-1">Spara trupp & matcher</div>
+                      </div>
+                  </button>
+              </div>
+              {syncResult && (
+                <div className="p-4 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-300 text-xs font-bold">
+                  {syncResult}
+                </div>
+              )}
+
+              {/* Coach API-anslutning för ChatGPT / Plugins */}
+              <div className="pt-4 border-t border-slate-800/80 space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <CloudLightning size={14} className="text-blue-400" /> Coachens API-uppgifter (för ChatGPT Plugin)
+                  </span>
+                  <button 
+                    onClick={copyUid}
+                    className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-[9px] font-bold flex items-center gap-1.5 transition-all"
+                  >
+                    {uidCopied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                    {uidCopied ? 'Kopierat!' : 'Kopiera Coach-UID'}
+                  </button>
+                </div>
+                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 font-mono text-[10px] text-slate-300 truncate">
+                  Coach-UID: <span className="text-emerald-400 font-bold">{user?.uid || 'Ej inloggad'}</span>
+                </div>
+                <p className="text-[9px] text-slate-500 leading-relaxed font-medium">
+                  Används för att autentisera anrop från ChatGPT via headern <code className="text-slate-400">Authorization: Bearer &lt;token&gt;</code> eller parametern <code className="text-slate-400">?coachId={user?.uid}</code>.
+                </p>
               </div>
           </div>
       )}

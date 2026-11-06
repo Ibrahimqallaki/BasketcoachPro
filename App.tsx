@@ -64,6 +64,9 @@ const App: React.FC = () => {
               try {
                 const isAllowed = await dataService.isEmailWhitelisted(currentUser.email);
                 setIsDenied(!isAllowed);
+                if (isAllowed) {
+                  await dataService.syncLocalToCloudIfEmpty();
+                }
               } catch (err) {
                 console.error("Whitelist check failed", err);
               }
