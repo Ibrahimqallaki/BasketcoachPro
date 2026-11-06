@@ -5,6 +5,23 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { mockPhases, mockWarmupExercises } from './services/mockData';
+import { 
+  serverDb, 
+  CANONICAL_COACH_ID, 
+  ensureFirestoreInitialized, 
+  cleanFirestoreData 
+} from './services/firestoreDb';
+import { 
+  collection, 
+  getDocs, 
+  doc, 
+  getDoc, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  orderBy 
+} from 'firebase/firestore';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -429,110 +446,108 @@ app.post('/api/gemini/generate-image', async (req, res) => {
   }
 });
 
+// Helper to extract coachId
+const getTargetCoachId = (req: express.Request): string => {
+  return (req.query.coachId as string) || (req.body?.coachId as string) || CANONICAL_COACH_ID;
+};
+
 // 10. REST API v1 for ChatGPT Plugin, Voice Assistant, and External Integrations
-interface ServerMatch {
-  id: string;
-  date: string;
-  opponent: string;
-  score: number;
-  opponentScore: number;
-  teamSummary: string;
-  whatWorked?: string;
-  whatToImprove?: string;
-  nextTrainingFocus?: string;
-  playerPoints?: Record<string, number>;
-  feedbacks?: any[];
-}
-
-const serverMatches: ServerMatch[] = [
-  {
-    id: 'm1',
-    date: '2026-10-11',
-    opponent: 'Högsbo Panthers röd',
-    score: 82,
-    opponentScore: 38,
-    teamSummary: 'Stark seriepremiär med dominant helplanspress och bra tempo.',
-    whatWorked: 'Försvarsintensiteten och kontringarna gav tidigt övertag.',
-    whatToImprove: 'Defensiva returer mot mer fysiska motståndare.',
-    nextTrainingFocus: 'Boxout-teknik och snabb bollframdrivning.',
-    playerPoints: { 'p1': 22, 'p2': 18, 'p3': 14 }
-  },
-  {
-    id: 'm2',
-    date: '2026-10-18',
-    opponent: 'Lundby Basket 2',
-    score: 72,
-    opponentScore: 59,
-    teamSummary: 'Stabil match med bra bollrörelse i andra halvlek.',
-    whatWorked: 'Tålamod i anfallet och bra passningsvinklar.',
-    whatToImprove: 'Minska antalet turnovers mot zonavskärning.',
-    nextTrainingFocus: 'Passningsövningar under press och back-door cuts.',
-    playerPoints: { 'p1': 19, 'p2': 16, 'p3': 11 }
-  },
-  {
-    id: 'm3',
-    date: '2026-10-24',
-    opponent: 'S:t Helena BK Grön',
-    score: 64,
-    opponentScore: 66,
-    teamSummary: 'Jämn match in i slutsekunderna. Kämpainsats men för många bortkastade bollar i första perioden.',
-    whatWorked: 'Försvarsspelet fungerade betydligt bättre efter de första tio minuterna.',
-    whatToImprove: 'Anfall, passningar under press och bollkontroll behöver utvecklas.',
-    nextTrainingFocus: 'Passningsövningar mot zonavskärning och bollkontroll under matchtempo.',
-    playerPoints: { 'p1': 20, 'p2': 15, 'p3': 8 }
-  }
-];
-
-const serverPlannedSessions: any[] = [
-  {
-    id: 'ps1',
-    date: '2026-10-29',
-    startTime: '18:00',
-    theme: 'Passningar under press & Boxout',
-    durationMinutes: 90,
-    warmupExerciseIds: ['w1', 'w3'],
-    exerciseIds: ['f2e1', 'f2e2', 'f5e3', 'f6e1'],
-    exerciseDurations: { 'f2e1': 15, 'f2e2': 20, 'f5e3': 20, 'f6e1': 20 },
-    status: 'planned'
-  }
-];
-
 app.get('/api/v1/team-summary', async (req, res) => {
-  const latestMatch = serverMatches[serverMatches.length - 1] || serverMatches[0];
-  const upcoming = serverPlannedSessions.filter(s => s.status === 'planned');
+  try {
+    const coachId = getTargetCoachId(req);
+    await ensureFirestoreInitialized(coachId);
 
-  res.json({
-    team: 'Orion HU15',
-    category: 'Pojkar 14-15 år (HU15)',
-    coach: 'Ibrahim Qallaki',
-    standardPracticeMinutes: 90,
-    currentThemes: ['Pick & Roll', 'Helplanspressbryt', 'Defensiva returer', '5-Out rörelse'],
-    stats: {
-      matchesPlayed: serverMatches.length,
-      wins: serverMatches.filter(m => m.score > m.opponentScore).length,
-      losses: serverMatches.filter(m => m.score < m.opponentScore).length,
-      pointDifference: serverMatches.reduce((acc, m) => acc + (m.score - m.opponentScore), 0)
-    },
-    latestMatch: latestMatch ? {
-      date: latestMatch.date,
-      opponent: latestMatch.opponent,
-      score: latestMatch.score,
-      opponentScore: latestMatch.opponentScore,
-      result: `${latestMatch.score}–${latestMatch.opponentScore}`,
-      reflection: {
-        whatWorked: latestMatch.whatWorked,
-        whatToImprove: latestMatch.whatToImprove,
-        nextTrainingFocus: latestMatch.nextTrainingFocus
+    // 1. Matches
+    const matchesCol = collection(serverDb, `users/${coachId}/matches`);
+    const matchesSnap = await getDocs(query(matchesCol, orderBy('date', 'desc')));
+    const matches = matchesSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+
+    // 2. Planned Sessions
+    const plannedCol = collection(serverDb, `users/${coachId}/planned_sessions`);
+    const plannedSnap = await getDocs(query(plannedCol, orderBy('date', 'asc')));
+    const plannedSessions = plannedSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+
+    // 3. Players
+    const playersCol = collection(serverDb, `users/${coachId}/players`);
+    const playersSnap = await getDocs(query(playersCol, orderBy('number', 'asc')));
+    const players = playersSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+
+    // 4. Completed Sessions
+    const sessionsCol = collection(serverDb, `users/${coachId}/sessions`);
+    const sessionsSnap = await getDocs(query(sessionsCol, orderBy('date', 'desc')));
+    const sessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+
+    const latestMatch = matches[0] || null;
+    const upcoming = plannedSessions.filter(s => s.status === 'planned');
+
+    res.json({
+      team: 'Orion HU15',
+      category: 'Pojkar 14-15 år (HU15)',
+      coach: 'Ibrahim Qallaki',
+      coachId,
+      standardPracticeMinutes: 90,
+      currentThemes: ['Pick & Roll', 'Helplanspressbryt', 'Defensiva returer', '5-Out rörelse'],
+      rosterSummary: {
+        totalPlayers: players.length,
+        players: players.map(p => ({
+          id: p.id,
+          name: p.name,
+          number: p.number,
+          position: p.position,
+          accessCode: p.accessCode
+        }))
       },
-      playerPoints: latestMatch.playerPoints
-    } : null,
-    upcomingPlannedSessions: upcoming,
-    availableLibrary: {
-      totalExercises: mockPhases.reduce((acc, p) => acc + p.exercises.length, 0),
-      totalWarmups: mockWarmupExercises.length,
-      categories: ['Skott', 'Dribbling', 'Passningar', 'Försvar', 'Kondition', 'Basket-IQ', 'Fysik', 'Uppvärmning']
-    }
-  });
+      stats: {
+        matchesPlayed: matches.length,
+        wins: matches.filter(m => (m.score || 0) > (m.opponentScore || 0)).length,
+        losses: matches.filter(m => (m.score || 0) < (m.opponentScore || 0)).length,
+        pointDifference: matches.reduce((acc, m) => acc + ((m.score || 0) - (m.opponentScore || 0)), 0),
+        completedSessions: sessions.length
+      },
+      latestMatch: latestMatch ? {
+        id: latestMatch.id,
+        date: latestMatch.date,
+        opponent: latestMatch.opponent,
+        score: latestMatch.score,
+        opponentScore: latestMatch.opponentScore,
+        result: `${latestMatch.score}–${latestMatch.opponentScore}`,
+        teamSummary: latestMatch.teamSummary || '',
+        reflection: {
+          whatWorked: latestMatch.whatWorked || '',
+          whatToImprove: latestMatch.whatToImprove || '',
+          nextTrainingFocus: latestMatch.nextTrainingFocus || ''
+        },
+        playerPoints: latestMatch.playerPoints || {},
+        feedbacks: latestMatch.feedbacks || []
+      } : null,
+      upcomingPlannedSessions: upcoming,
+      availableLibrary: {
+        totalExercises: mockPhases.reduce((acc, p) => acc + p.exercises.length, 0),
+        totalWarmups: mockWarmupExercises.length,
+        categories: ['Skott', 'Dribbling', 'Passningar', 'Försvar', 'Kondition', 'Basket-IQ', 'Fysik', 'Uppvärmning']
+      }
+    });
+  } catch (err: any) {
+    console.error('Error fetching team summary:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/v1/players', async (req, res) => {
+  try {
+    const coachId = getTargetCoachId(req);
+    await ensureFirestoreInitialized(coachId);
+    const playersCol = collection(serverDb, `users/${coachId}/players`);
+    const snap = await getDocs(query(playersCol, orderBy('number', 'asc')));
+    const players = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    res.json({
+      total: players.length,
+      players
+    });
+  } catch (err: any) {
+    console.error('Error fetching players:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/api/v1/exercises', async (req, res) => {
@@ -585,64 +600,170 @@ app.get('/api/v1/exercises', async (req, res) => {
 });
 
 app.get('/api/v1/matches', async (req, res) => {
-  res.json({
-    total: serverMatches.length,
-    matches: serverMatches
-  });
+  try {
+    const coachId = getTargetCoachId(req);
+    await ensureFirestoreInitialized(coachId);
+    const matchesCol = collection(serverDb, `users/${coachId}/matches`);
+    const snap = await getDocs(query(matchesCol, orderBy('date', 'desc')));
+    const matches = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    res.json({
+      total: matches.length,
+      matches
+    });
+  } catch (err: any) {
+    console.error('Error fetching matches:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/v1/matches', async (req, res) => {
   try {
-    const newMatch: ServerMatch = {
-      id: req.body.id || 'm_' + Math.random().toString(36).substr(2, 8),
+    const coachId = getTargetCoachId(req);
+    await ensureFirestoreInitialized(coachId);
+
+    const docId = req.body.id || `match_${req.body.date ? req.body.date.replace(/-/g, '') : Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const matchData = cleanFirestoreData({
+      id: docId,
       date: req.body.date || new Date().toISOString().split('T')[0],
       opponent: req.body.opponent || 'Okänd Motståndare',
       score: Number(req.body.score) || 0,
       opponentScore: Number(req.body.opponentScore) || 0,
       teamSummary: req.body.teamSummary || '',
-      whatWorked: req.body.whatWorked,
-      whatToImprove: req.body.whatToImprove,
-      nextTrainingFocus: req.body.nextTrainingFocus,
+      whatWorked: req.body.whatWorked || '',
+      whatToImprove: req.body.whatToImprove || '',
+      nextTrainingFocus: req.body.nextTrainingFocus || '',
       playerPoints: req.body.playerPoints || {},
-      feedbacks: req.body.feedbacks || []
-    };
-    serverMatches.push(newMatch);
-    res.status(201).json({ success: true, match: newMatch });
+      feedbacks: req.body.feedbacks || [],
+      profixioMatchId: req.body.profixioMatchId || null,
+      created_at: req.body.created_at || new Date().toISOString()
+    });
+
+    await setDoc(doc(serverDb, `users/${coachId}/matches`, docId), matchData, { merge: true });
+    res.status(201).json({ success: true, match: matchData });
   } catch (err: any) {
+    console.error('Error saving match:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/v1/matches/:id', async (req, res) => {
+  try {
+    const coachId = getTargetCoachId(req);
+    await ensureFirestoreInitialized(coachId);
+    const matchId = req.params.id;
+    const updates = cleanFirestoreData({
+      ...req.body,
+      id: matchId,
+      updated_at: new Date().toISOString()
+    });
+
+    await setDoc(doc(serverDb, `users/${coachId}/matches`, matchId), updates, { merge: true });
+    const snap = await getDoc(doc(serverDb, `users/${coachId}/matches`, matchId));
+    res.json({ success: true, match: { id: snap.id, ...snap.data() } });
+  } catch (err: any) {
+    console.error('Error updating match:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
 app.get('/api/v1/planned-sessions', async (req, res) => {
-  res.json({
-    total: serverPlannedSessions.length,
-    plannedSessions: serverPlannedSessions
-  });
+  try {
+    const coachId = getTargetCoachId(req);
+    await ensureFirestoreInitialized(coachId);
+    const plannedCol = collection(serverDb, `users/${coachId}/planned_sessions`);
+    const snap = await getDocs(query(plannedCol, orderBy('date', 'asc')));
+    const plannedSessions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    res.json({
+      total: plannedSessions.length,
+      plannedSessions
+    });
+  } catch (err: any) {
+    console.error('Error fetching planned sessions:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/v1/planned-sessions', async (req, res) => {
   try {
-    const session = {
-      id: req.body.id || 'ps_' + Math.random().toString(36).substr(2, 8),
+    const coachId = getTargetCoachId(req);
+    await ensureFirestoreInitialized(coachId);
+
+    const docId = req.body.id || `planned_${req.body.date ? req.body.date.replace(/-/g, '') : Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const sessionData = cleanFirestoreData({
+      id: docId,
       date: req.body.date || new Date().toISOString().split('T')[0],
       startTime: req.body.startTime || '18:00',
       theme: req.body.theme || 'Träningspass',
-      durationMinutes: req.body.durationMinutes || 90,
+      durationMinutes: Number(req.body.durationMinutes) || 90,
+      phaseId: Number(req.body.phaseId) || 2,
       warmupExerciseIds: req.body.warmupExerciseIds || [],
       exerciseIds: req.body.exerciseIds || [],
       exerciseDurations: req.body.exerciseDurations || {},
       status: req.body.status || 'planned',
-      created_at: new Date().toISOString()
-    };
-    serverPlannedSessions.push(session);
-    res.status(201).json({ success: true, session });
+      created_at: req.body.created_at || new Date().toISOString()
+    });
+
+    await setDoc(doc(serverDb, `users/${coachId}/planned_sessions`, docId), sessionData, { merge: true });
+    res.status(201).json({ success: true, session: sessionData });
   } catch (err: any) {
+    console.error('Error saving planned session:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/v1/planned-sessions/:id', async (req, res) => {
+  try {
+    const coachId = getTargetCoachId(req);
+    await ensureFirestoreInitialized(coachId);
+    const sessionId = req.params.id;
+    const updates = cleanFirestoreData({
+      ...req.body,
+      id: sessionId,
+      updated_at: new Date().toISOString()
+    });
+
+    await setDoc(doc(serverDb, `users/${coachId}/planned_sessions`, sessionId), updates, { merge: true });
+    const snap = await getDoc(doc(serverDb, `users/${coachId}/planned_sessions`, sessionId));
+    res.json({ success: true, session: { id: snap.id, ...snap.data() } });
+  } catch (err: any) {
+    console.error('Error updating planned session:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/v1/planned-sessions/:id', async (req, res) => {
+  try {
+    const coachId = getTargetCoachId(req);
+    await ensureFirestoreInitialized(coachId);
+    await deleteDoc(doc(serverDb, `users/${coachId}/planned_sessions`, req.params.id));
+    res.json({ success: true, deletedId: req.params.id });
+  } catch (err: any) {
+    console.error('Error deleting planned session:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/v1/matches/:id', async (req, res) => {
+  try {
+    const coachId = getTargetCoachId(req);
+    await ensureFirestoreInitialized(coachId);
+    await deleteDoc(doc(serverDb, `users/${coachId}/matches`, req.params.id));
+    res.json({ success: true, deletedId: req.params.id });
+  } catch (err: any) {
+    console.error('Error deleting match:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
 // Dev / Prod Vite handling
 async function startServer() {
+  try {
+    await ensureFirestoreInitialized();
+    console.log('Firestore initialized with canonical coach data.');
+  } catch (initErr) {
+    console.warn('Initial Firestore seeding warning:', initErr);
+  }
+
   const isProd = process.env.NODE_ENV === 'production' && fs.existsSync(path.resolve(__dirname, 'dist', 'index.html'));
 
   if (!isProd) {

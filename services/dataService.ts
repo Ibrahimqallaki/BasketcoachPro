@@ -1,5 +1,5 @@
 
-import { Player, TrainingSession, PlannedSession, MatchRecord, Homework, Phase, Exercise, AppTicket, TicketStatus, WarmupExercise } from '../types';
+import { Player, TrainingSession, PlannedSession, MatchRecord, Homework, Phase, Exercise, AppTicket, TicketStatus, WarmupExercise, CANONICAL_COACH_ID } from '../types';
 import { mockPlayers, mockPhases, mockWarmupExercises } from './mockData';
 import { db, auth, isFirebaseConfigured } from './firebase';
 // Fix: Added @ts-ignore to bypass environment-specific resolution issues with Firebase exports
@@ -50,9 +50,7 @@ const cleanFirestorePayload = <T extends Record<string, any>>(obj: T): T => {
 
 export const dataService = {
   getStorageMode: () => {
-    if (!isFirebaseConfigured) return 'NO_CONFIG';
-    const user = auth.currentUser;
-    if (!user || user.uid === 'guest') return 'LOCAL';
+    if (!isFirebaseConfigured || !db) return 'NO_CONFIG';
     return 'CLOUD';
   },
 
@@ -108,7 +106,13 @@ export const dataService = {
   getUserPath: () => {
     if (!isFirebaseConfigured || !db) return null;
     const user = auth.currentUser;
-    if (!user || user.uid === 'guest' || user.isAnonymous) return null;
+    // Default to canonical coach profile for Ibrahim Qallaki or unauthenticated/guest coach
+    if (!user || user.uid === 'guest' || user.isAnonymous) {
+      return `users/${CANONICAL_COACH_ID}`;
+    }
+    if (user.email && user.email.toLowerCase().trim() === SUPER_ADMIN_EMAIL) {
+      return `users/${CANONICAL_COACH_ID}`;
+    }
     return `users/${user.uid}`;
   },
 
