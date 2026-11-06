@@ -309,7 +309,8 @@ export const dataService = {
   saveMatch: async (match: Omit<MatchRecord, 'id'>): Promise<MatchRecord> => {
     const path = dataService.getUserPath();
     if (path && db) {
-      const docRef = await addDoc(collection(db, `${path}/matches`), { ...match, created_at: new Date().toISOString() });
+      const payload = cleanFirestorePayload({ ...match, created_at: new Date().toISOString() });
+      const docRef = await addDoc(collection(db, `${path}/matches`), payload);
       return { ...match, id: docRef.id } as MatchRecord;
     } else {
       const matches = await dataService.getMatches();

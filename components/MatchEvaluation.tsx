@@ -46,6 +46,7 @@ export const MatchEvaluation: React.FC = () => {
     profixioMatchId?: string;
     tacticalPlays: string[];
     shots: Shot[];
+    playerPoints: Record<string, number>;
     feedbacks: Record<string, MatchFeedback>;
   }>({
     opponent: '',
@@ -58,6 +59,7 @@ export const MatchEvaluation: React.FC = () => {
     nextTrainingFocus: '',
     tacticalPlays: [],
     shots: [],
+    playerPoints: {},
     feedbacks: {}
   });
 
@@ -71,10 +73,9 @@ export const MatchEvaluation: React.FC = () => {
       setPlayers(p);
       setMatches(m);
       
-      // We do NOT prefill fake 3/5 ratings for all players anymore.
-      // Individual player feedback is optional and only saved if coach grades them.
       setNewMatch(prev => ({
         ...prev,
+        playerPoints: {},
         feedbacks: {}
       }));
     } finally {
@@ -126,10 +127,14 @@ export const MatchEvaluation: React.FC = () => {
     setEditingMatchId(match.id);
     const fbMap: Record<string, MatchFeedback> = {};
     const ratedMap: Record<string, boolean> = {};
+    const ptsMap: Record<string, number> = { ...(match.playerPoints || {}) };
 
     (match.feedbacks || []).forEach(f => {
       fbMap[f.playerId] = f;
       ratedMap[f.playerId] = true;
+      if (f.points !== undefined) {
+        ptsMap[f.playerId] = f.points;
+      }
     });
 
     setNewMatch({
@@ -144,6 +149,7 @@ export const MatchEvaluation: React.FC = () => {
       profixioMatchId: match.profixioMatchId,
       tacticalPlays: match.tacticalPlays || [],
       shots: match.shots || [],
+      playerPoints: ptsMap,
       feedbacks: fbMap
     });
 
@@ -153,17 +159,60 @@ export const MatchEvaluation: React.FC = () => {
     setIsAdding(true);
   };
 
+  const updatePlayerPoints = (playerId: string, deltaOrVal: number, isAbsolute: boolean = false) => {
+    setNewMatch(prev => {
+      const curPts = prev.playerPoints[playerId] ?? (prev.feedbacks[playerId]?.points ?? 0);
+      const nextPts = Math.max(0, isAbsolute ? deltaOrVal : curPts + deltaOrVal);
+      const updatedPlayerPoints = { ...prev.playerPoints, [playerId]: nextPts };
+      
+      const existingFb = prev.feedbacks[playerId] || {
+        playerId,
+        effort: 3,
+        teamwork: 3,
+        learning: 3,
+        strengths: '',
+        improvements: ''
+      };
+
+      return {
+        ...prev,
+        playerPoints: updatedPlayerPoints,
+        feedbacks: {
+          ...prev.feedbacks,
+          [playerId]: { ...existingFb, points: nextPts }
+        }
+      };
+    });
+  };
+
   const saveMatch = async () => {
     if (!newMatch.opponent) return;
     setLoading(true);
 
-    // Only include feedbacks if coach enabled them and rated players
-    let finalFeedbacks: MatchFeedback[] = [];
-    if (includePlayerRatings) {
-      finalFeedbacks = Object.entries(newMatch.feedbacks)
-        .filter(([playerId]) => activeRatedPlayerIds[playerId] !== false)
-        .map(([_, fb]) => fb);
-    }
+    const finalFeedbacks: MatchFeedback[] = [];
+    const finalPlayerPoints: Record<string, number> = {};
+
+    players.forEach(p => {
+      const pts = newMatch.playerPoints[p.id] ?? (newMatch.feedbacks[p.id]?.points ?? 0);
+      const isRated = includePlayerRatings && activeRatedPlayerIds[p.id] !== false;
+      const fb = newMatch.feedbacks[p.id];
+
+      if (pts > 0) {
+        finalPlayerPoints[p.id] = pts;
+      }
+
+      if (pts > 0 || isRated) {
+        finalFeedbacks.push({
+          playerId: p.id,
+          points: pts,
+          effort: isRated ? (fb?.effort ?? 3) : 3,
+          teamwork: isRated ? (fb?.teamwork ?? 3) : 3,
+          learning: isRated ? (fb?.learning ?? 3) : 3,
+          strengths: fb?.strengths || '',
+          improvements: fb?.improvements || ''
+        });
+      }
+    });
 
     const matchData = {
       date: newMatch.date,
@@ -177,6 +226,7 @@ export const MatchEvaluation: React.FC = () => {
       profixioMatchId: newMatch.profixioMatchId,
       tacticalPlays: newMatch.tacticalPlays,
       shots: newMatch.shots,
+      playerPoints: finalPlayerPoints,
       feedbacks: finalFeedbacks
     };
 
@@ -204,6 +254,7 @@ export const MatchEvaluation: React.FC = () => {
       nextTrainingFocus: '',
       tacticalPlays: [],
       shots: [],
+      playerPoints: {},
       feedbacks: {}
     });
   };
@@ -212,6 +263,7 @@ export const MatchEvaluation: React.FC = () => {
     setNewMatch(prev => {
       const current = prev.feedbacks[playerId] || {
         playerId,
+        points: prev.playerPoints[playerId] ?? 0,
         effort: 3,
         teamwork: 3,
         learning: 3,
@@ -227,6 +279,42 @@ export const MatchEvaluation: React.FC = () => {
       };
     });
     setActiveRatedPlayerIds(prev => ({ ...prev, [playerId]: true }));
+  };
+
+  const selectedMatchTopScorers = useMemo(() => {
+    if (!selectedMatch) return [];
+    const ptsMap: Record<string, number> = { ...(selectedMatch.playerPoints || {}) };
+    (selectedMatch.feedbacks || []).forEach(f => {
+      if (f.points !== undefined && f.points > 0) {
+        ptsMap[f.playerId] = f.points;
+      }
+    });
+
+    const list = Object.entries(ptsMap)
+      .filter(([_, pts]) => pts > 0)
+      .map(([playerId, points]) => ({
+        player: players.find(p => p.id === playerId),
+        points
+      }));
+
+    return list.sort((a, b) => b.points - a.points);
+  }, [selectedMatch, players]);
+
+  const getMatchTopScorer = (m: MatchRecord) => {
+    const ptsMap: Record<string, number> = { ...(m.playerPoints || {}) };
+    (m.feedbacks || []).forEach(f => {
+      if (f.points !== undefined && f.points > 0) {
+        ptsMap[f.playerId] = f.points;
+      }
+    });
+
+    let top: { player: Player | undefined; points: number } | null = null;
+    for (const [playerId, pts] of Object.entries(ptsMap)) {
+      if (pts > 0 && (!top || pts > top.points)) {
+        top = { player: players.find(p => p.id === playerId), points: pts };
+      }
+    }
+    return top;
   };
 
   if (loading && players.length === 0) {
@@ -359,6 +447,96 @@ export const MatchEvaluation: React.FC = () => {
               </div>
             </div>
 
+            {/* INDIVIDUELLA SPELARPOÄNG / MATCHPROTOKOLL */}
+            <div className="p-6 rounded-3xl bg-slate-950 border border-slate-800 space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-900 pb-3">
+                <div className="flex items-center gap-2">
+                  <Trophy size={18} className="text-orange-500" />
+                  <h4 className="text-sm font-black text-white uppercase tracking-tight">
+                    Spelarpoäng (Matchprotokoll)
+                  </h4>
+                </div>
+                
+                {(() => {
+                  const totalPts = Object.values(newMatch.playerPoints).reduce((acc, v) => acc + (Number(v) || 0), 0);
+                  const teamScoreNum = parseInt(newMatch.score) || 0;
+                  const isMatch = teamScoreNum > 0 && totalPts === teamScoreNum;
+                  const isOver = teamScoreNum > 0 && totalPts > teamScoreNum;
+                  
+                  return (
+                    <div className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-2 ${
+                      isMatch 
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                        : isOver 
+                        ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                        : 'bg-slate-900 text-slate-400 border border-slate-800'
+                    }`}>
+                      <span>Fördelade poäng: {totalPts} {teamScoreNum > 0 ? `/ ${teamScoreNum} p` : 'p'}</span>
+                      {isMatch && <Check size={13} className="text-emerald-400" />}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <p className="text-[11px] text-slate-400 font-medium">
+                Skriv in spelarnas poäng direkt eller klicka på +2 / +3 för snabb registrering. Poängen sparas med matchen även utan individuella betyg.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {players.map(p => {
+                  const pts = newMatch.playerPoints[p.id] ?? 0;
+                  return (
+                    <div key={p.id} className="p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800 flex items-center justify-between gap-2 hover:border-slate-700 transition-colors">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-orange-600/20 border border-orange-500/30 flex items-center justify-center font-black text-xs text-orange-400 shrink-0">
+                          #{p.number}
+                        </div>
+                        <span className="text-xs font-bold text-white truncate">{p.name}</span>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button 
+                          type="button"
+                          onClick={() => updatePlayerPoints(p.id, -1)}
+                          className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-black text-xs flex items-center justify-center active:scale-95 transition-all"
+                          title="-1 poäng"
+                        >
+                          -
+                        </button>
+                        <input 
+                          type="number"
+                          min="0"
+                          value={pts === 0 ? '' : pts}
+                          onChange={e => updatePlayerPoints(p.id, parseInt(e.target.value) || 0, true)}
+                          placeholder="0"
+                          className="w-12 h-7 bg-slate-950 border border-slate-700 rounded-lg text-center text-xs font-black text-white focus:border-orange-500 outline-none"
+                        />
+                        <span className="text-[10px] font-bold text-slate-500 mr-1">p</span>
+                        <div className="flex gap-1">
+                          <button 
+                            type="button"
+                            onClick={() => updatePlayerPoints(p.id, 2)}
+                            className="px-2 h-7 rounded-lg bg-slate-800 hover:bg-orange-600 hover:text-white text-[10px] font-black text-slate-300 active:scale-95 transition-all"
+                            title="+2 poäng"
+                          >
+                            +2
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => updatePlayerPoints(p.id, 3)}
+                            className="px-2 h-7 rounded-lg bg-slate-800 hover:bg-orange-600 hover:text-white text-[10px] font-black text-slate-300 active:scale-95 transition-all"
+                            title="+3 poäng"
+                          >
+                            +3
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* KORT MATCHREFLEKTION FÖR TRÄNINGSUNDERLAG */}
             <div className="p-6 rounded-3xl bg-slate-950 border border-slate-800 space-y-4">
               <div className="flex items-center gap-2">
@@ -456,7 +634,12 @@ export const MatchEvaluation: React.FC = () => {
                           <div className="flex items-center justify-between border-b border-slate-900 pb-4">
                             <div className="flex items-center gap-4">
                               <div className="w-10 h-10 rounded-xl bg-orange-600 flex items-center justify-center font-black text-white italic">#{p.number}</div>
-                              <h5 className="text-lg font-black uppercase text-white italic">{p.name}</h5>
+                              <div>
+                                <h5 className="text-lg font-black uppercase text-white italic">{p.name}</h5>
+                                <span className="text-[10px] font-bold text-orange-400">
+                                  {newMatch.playerPoints[p.id] ?? fb.points ?? 0} poäng i matchen
+                                </span>
+                              </div>
                             </div>
                             <span className={`text-[9px] font-black uppercase px-2.5 py-1 rounded-lg ${isGraded ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-900 text-slate-500'}`}>
                               {isGraded ? 'Betygsatt' : 'Ej betygsatt'}
@@ -558,6 +741,36 @@ export const MatchEvaluation: React.FC = () => {
                     </div>
                 </div>
 
+                {selectedMatchTopScorers.length > 0 && (
+                  <div className="p-6 rounded-[2rem] bg-gradient-to-br from-orange-950/30 to-slate-950 border border-orange-500/30 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Trophy size={16} className="text-orange-400" />
+                        <h4 className="text-xs font-black uppercase tracking-widest text-white">
+                          Toppskyttar & Spelarpoäng
+                        </h4>
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        {selectedMatchTopScorers.reduce((s, p) => s + p.points, 0)} poäng registrerade
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                      {selectedMatchTopScorers.map((item, idx) => (
+                        <div key={idx} className="p-3 rounded-2xl bg-slate-900/90 border border-slate-800/80 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-[10px] font-black text-orange-400 shrink-0">#{item.player?.number || '??'}</span>
+                            <span className="text-xs font-bold text-white truncate">{item.player?.name || 'Spelare'}</span>
+                          </div>
+                          <span className="text-xs font-black text-white bg-orange-600/30 border border-orange-500/30 px-2 py-0.5 rounded-lg shrink-0">
+                            {item.points} p
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid md:grid-cols-2 gap-8 border-t border-slate-800/50 pt-10">
                     <div className="space-y-6">
                         <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
@@ -604,13 +817,21 @@ export const MatchEvaluation: React.FC = () => {
                         <div className="space-y-3 max-h-[500px] overflow-y-auto custom-scrollbar pr-2">
                             {selectedMatch.feedbacks.map((f) => {
                                 const p = players.find(player => player.id === f.playerId);
+                                const pts = f.points ?? selectedMatch.playerPoints?.[f.playerId] ?? 0;
                                 return (
                                     <div key={f.playerId} className="p-5 rounded-[2rem] bg-slate-950 border border-slate-800 space-y-4">
-                                        <div className="flex items-center gap-4">
-                                            <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center font-black text-xs text-orange-500 shadow-inner">
-                                                #{p?.number || '??'}
-                                            </div>
-                                            <div className="text-xs font-black text-white uppercase tracking-tight">{p?.name || 'Okänd Spelare'}</div>
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-4">
+                                              <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center font-black text-xs text-orange-500 shadow-inner">
+                                                  #{p?.number || '??'}
+                                              </div>
+                                              <div className="text-xs font-black text-white uppercase tracking-tight">{p?.name || 'Okänd Spelare'}</div>
+                                          </div>
+                                          {pts > 0 && (
+                                            <span className="px-2.5 py-1 rounded-xl bg-orange-600/20 border border-orange-500/30 text-orange-400 font-black text-xs">
+                                              🏀 {pts} poäng
+                                            </span>
+                                          )}
                                         </div>
                                         <div className="grid grid-cols-3 gap-2">
                                             <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex flex-col items-center gap-1">
@@ -644,14 +865,22 @@ export const MatchEvaluation: React.FC = () => {
         <div className="grid gap-4">
           {matches.map(m => {
             const isWin = m.score > m.opponentScore;
+            const topScorer = getMatchTopScorer(m);
             return (
               <div key={m.id} onClick={() => setSelectedMatch(m)} className="p-6 rounded-[2rem] bg-slate-900 border border-slate-800 hover:border-orange-500/50 transition-all cursor-pointer group shadow-lg active:scale-[0.98]">
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-4">
                     <div className={`p-4 rounded-2xl transition-all shadow-inner ${isWin ? 'bg-emerald-500/10 text-emerald-500 group-hover:bg-emerald-500 group-hover:text-white' : 'bg-rose-500/10 text-rose-500 group-hover:bg-rose-500 group-hover:text-white'}`}><Trophy size={20} /></div>
                     <div>
-                        <h4 className="text-xl font-black text-white italic uppercase tracking-tighter">{m.opponent}</h4>
-                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{m.date}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="text-xl font-black text-white italic uppercase tracking-tighter">{m.opponent}</h4>
+                          {topScorer && (
+                            <span className="text-[9px] font-black uppercase text-orange-400 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded-lg">
+                              Top: {topScorer.player?.name?.split(' ')[0] || 'Spelare'} ({topScorer.points}p)
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">{m.date}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-6">

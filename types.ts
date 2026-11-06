@@ -229,6 +229,7 @@ export interface TrainingSession {
 
 export interface MatchFeedback {
   playerId: string;
+  points?: number;
   effort: number;
   teamwork: number;
   learning: number;
@@ -250,6 +251,7 @@ export interface MatchRecord {
   score: number;
   opponentScore: number;
   feedbacks: MatchFeedback[];
+  playerPoints?: Record<string, number>;
   teamSummary: string;
   whatWorked?: string;
   whatToImprove?: string;

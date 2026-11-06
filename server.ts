@@ -4,6 +4,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import { mockPhases, mockWarmupExercises } from './services/mockData';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -30,9 +31,10 @@ const MODEL_NAME = 'gemini-3-flash-preview';
 app.post('/api/gemini/insight', async (req, res) => {
   try {
     const { playersCount, sessionsCount, recentMatches } = req.body;
-    const prompt = `Du är en assisterande basketcoach. Ge en kort, proaktiv och uppmuntrande insikt (max 2 meningar) till huvudtränaren baserat på följande data:
-    Antal spelare: ${playersCount || 0}. Antal träningar: ${sessionsCount || 0}. Senaste matchresultat: ${recentMatches || 'Inga'}.
-    Fokusera på vad vi bör tänka på idag. Svara på svenska.`;
+    const prompt = `Du är en assisterande basketcoach för ett svenskt ungdomslag (Orion HU15). Ge en kort, proaktiv och uppmuntrande insikt (max 2 meningar) till huvudtränaren baserat på följande data:
+    Total truppstorlek (registrerade spelare): ${playersCount || 0}. Antal genomförda träningar i appens logg: ${sessionsCount || 0}. Senaste matchresultat: ${recentMatches || 'Inga'}.
+    VIKTIGT: Säg INTE att spelarna är "på plats idag" – detta är lagets totala truppstorlek, inte en pågående träning eller fysisk närvaro idag.
+    Fokusera på vad laget kan bygga vidare på. Svara på ren svenska.`;
 
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
@@ -42,7 +44,7 @@ app.post('/api/gemini/insight', async (req, res) => {
       },
     });
 
-    const insight = response.text?.trim() || 'Dags för en ny bra träningsvecka. Fokusera på detaljerna idag!';
+    const insight = response.text?.trim() || 'Dags för en ny bra träningsvecka. Fokusera på detaljerna i matchtempot!';
     res.json({ insight });
   } catch (error: any) {
     console.error('Error generating AI insight:', error);
@@ -428,24 +430,212 @@ app.post('/api/gemini/generate-image', async (req, res) => {
 });
 
 // 10. REST API v1 for ChatGPT Plugin, Voice Assistant, and External Integrations
+interface ServerMatch {
+  id: string;
+  date: string;
+  opponent: string;
+  score: number;
+  opponentScore: number;
+  teamSummary: string;
+  whatWorked?: string;
+  whatToImprove?: string;
+  nextTrainingFocus?: string;
+  playerPoints?: Record<string, number>;
+  feedbacks?: any[];
+}
+
+const serverMatches: ServerMatch[] = [
+  {
+    id: 'm1',
+    date: '2026-10-11',
+    opponent: 'Högsbo Panthers röd',
+    score: 82,
+    opponentScore: 38,
+    teamSummary: 'Stark seriepremiär med dominant helplanspress och bra tempo.',
+    whatWorked: 'Försvarsintensiteten och kontringarna gav tidigt övertag.',
+    whatToImprove: 'Defensiva returer mot mer fysiska motståndare.',
+    nextTrainingFocus: 'Boxout-teknik och snabb bollframdrivning.',
+    playerPoints: { 'p1': 22, 'p2': 18, 'p3': 14 }
+  },
+  {
+    id: 'm2',
+    date: '2026-10-18',
+    opponent: 'Lundby Basket 2',
+    score: 72,
+    opponentScore: 59,
+    teamSummary: 'Stabil match med bra bollrörelse i andra halvlek.',
+    whatWorked: 'Tålamod i anfallet och bra passningsvinklar.',
+    whatToImprove: 'Minska antalet turnovers mot zonavskärning.',
+    nextTrainingFocus: 'Passningsövningar under press och back-door cuts.',
+    playerPoints: { 'p1': 19, 'p2': 16, 'p3': 11 }
+  },
+  {
+    id: 'm3',
+    date: '2026-10-24',
+    opponent: 'S:t Helena BK Grön',
+    score: 64,
+    opponentScore: 66,
+    teamSummary: 'Jämn match in i slutsekunderna. Kämpainsats men för många bortkastade bollar i första perioden.',
+    whatWorked: 'Försvarsspelet fungerade betydligt bättre efter de första tio minuterna.',
+    whatToImprove: 'Anfall, passningar under press och bollkontroll behöver utvecklas.',
+    nextTrainingFocus: 'Passningsövningar mot zonavskärning och bollkontroll under matchtempo.',
+    playerPoints: { 'p1': 20, 'p2': 15, 'p3': 8 }
+  }
+];
+
+const serverPlannedSessions: any[] = [
+  {
+    id: 'ps1',
+    date: '2026-10-29',
+    startTime: '18:00',
+    theme: 'Passningar under press & Boxout',
+    durationMinutes: 90,
+    warmupExerciseIds: ['w1', 'w3'],
+    exerciseIds: ['f2e1', 'f2e2', 'f5e3', 'f6e1'],
+    exerciseDurations: { 'f2e1': 15, 'f2e2': 20, 'f5e3': 20, 'f6e1': 20 },
+    status: 'planned'
+  }
+];
+
 app.get('/api/v1/team-summary', async (req, res) => {
+  const latestMatch = serverMatches[serverMatches.length - 1] || serverMatches[0];
+  const upcoming = serverPlannedSessions.filter(s => s.status === 'planned');
+
   res.json({
     team: 'Orion HU15',
     category: 'Pojkar 14-15 år (HU15)',
     coach: 'Ibrahim Qallaki',
     standardPracticeMinutes: 90,
-    currentThemes: ['Pick & Roll', 'Helplanspressbryt', 'Defensiva returer', '5-Out rörelse']
+    currentThemes: ['Pick & Roll', 'Helplanspressbryt', 'Defensiva returer', '5-Out rörelse'],
+    stats: {
+      matchesPlayed: serverMatches.length,
+      wins: serverMatches.filter(m => m.score > m.opponentScore).length,
+      losses: serverMatches.filter(m => m.score < m.opponentScore).length,
+      pointDifference: serverMatches.reduce((acc, m) => acc + (m.score - m.opponentScore), 0)
+    },
+    latestMatch: latestMatch ? {
+      date: latestMatch.date,
+      opponent: latestMatch.opponent,
+      score: latestMatch.score,
+      opponentScore: latestMatch.opponentScore,
+      result: `${latestMatch.score}–${latestMatch.opponentScore}`,
+      reflection: {
+        whatWorked: latestMatch.whatWorked,
+        whatToImprove: latestMatch.whatToImprove,
+        nextTrainingFocus: latestMatch.nextTrainingFocus
+      },
+      playerPoints: latestMatch.playerPoints
+    } : null,
+    upcomingPlannedSessions: upcoming,
+    availableLibrary: {
+      totalExercises: mockPhases.reduce((acc, p) => acc + p.exercises.length, 0),
+      totalWarmups: mockWarmupExercises.length,
+      categories: ['Skott', 'Dribbling', 'Passningar', 'Försvar', 'Kondition', 'Basket-IQ', 'Fysik', 'Uppvärmning']
+    }
   });
 });
 
 app.get('/api/v1/exercises', async (req, res) => {
   try {
-    const mockDataFile = path.join(__dirname, 'services/mockData.ts');
-    // Basic exercise metadata endpoint
+    const { category, phase } = req.query;
+    let exercises = mockPhases.flatMap(p => p.exercises.map(e => ({
+      id: e.id,
+      title: e.title,
+      category: e.category,
+      level: e.level || 'Medel',
+      duration: e.duration || '15 min',
+      overview: e.overview,
+      pedagogy: e.pedagogy,
+      instructions: e.instructions,
+      criteria: e.criteria,
+      videoUrl: e.videoUrl,
+      phaseId: p.id,
+      phaseTitle: p.title
+    })));
+
+    let warmups = mockWarmupExercises.map(w => ({
+      id: w.id,
+      title: w.title,
+      phase: w.phase,
+      duration: w.duration,
+      description: w.description,
+      coachingPoints: w.coachingPoints,
+      sbbfFocus: w.sbbfFocus,
+      visualSteps: w.visualSteps,
+      videoUrl: w.videoUrl
+    }));
+
+    if (category) {
+      exercises = exercises.filter(e => e.category.toLowerCase() === String(category).toLowerCase());
+    }
+    if (phase) {
+      exercises = exercises.filter(e => e.phaseId === Number(phase));
+    }
+
     res.json({
+      totalExercises: exercises.length,
+      totalWarmups: warmups.length,
       categories: ['Skott', 'Dribbling', 'Passningar', 'Försvar', 'Kondition', 'Basket-IQ', 'Fysik', 'Uppvärmning'],
-      message: 'Bibliotek tillgängligt via appens dataService'
+      exercises,
+      warmups
     });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/v1/matches', async (req, res) => {
+  res.json({
+    total: serverMatches.length,
+    matches: serverMatches
+  });
+});
+
+app.post('/api/v1/matches', async (req, res) => {
+  try {
+    const newMatch: ServerMatch = {
+      id: req.body.id || 'm_' + Math.random().toString(36).substr(2, 8),
+      date: req.body.date || new Date().toISOString().split('T')[0],
+      opponent: req.body.opponent || 'Okänd Motståndare',
+      score: Number(req.body.score) || 0,
+      opponentScore: Number(req.body.opponentScore) || 0,
+      teamSummary: req.body.teamSummary || '',
+      whatWorked: req.body.whatWorked,
+      whatToImprove: req.body.whatToImprove,
+      nextTrainingFocus: req.body.nextTrainingFocus,
+      playerPoints: req.body.playerPoints || {},
+      feedbacks: req.body.feedbacks || []
+    };
+    serverMatches.push(newMatch);
+    res.status(201).json({ success: true, match: newMatch });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/v1/planned-sessions', async (req, res) => {
+  res.json({
+    total: serverPlannedSessions.length,
+    plannedSessions: serverPlannedSessions
+  });
+});
+
+app.post('/api/v1/planned-sessions', async (req, res) => {
+  try {
+    const session = {
+      id: req.body.id || 'ps_' + Math.random().toString(36).substr(2, 8),
+      date: req.body.date || new Date().toISOString().split('T')[0],
+      startTime: req.body.startTime || '18:00',
+      theme: req.body.theme || 'Träningspass',
+      durationMinutes: req.body.durationMinutes || 90,
+      warmupExerciseIds: req.body.warmupExerciseIds || [],
+      exerciseIds: req.body.exerciseIds || [],
+      exerciseDurations: req.body.exerciseDurations || {},
+      status: req.body.status || 'planned',
+      created_at: new Date().toISOString()
+    };
+    serverPlannedSessions.push(session);
+    res.status(201).json({ success: true, session });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

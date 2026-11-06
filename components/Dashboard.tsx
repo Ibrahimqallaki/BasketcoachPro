@@ -58,7 +58,7 @@ export const Dashboard: React.FC<{
       const savedDate = sessionStorage.getItem('basketcoach_daily_insight_date');
       const today = new Date().toISOString().split('T')[0];
 
-      if (savedInsight && savedDate === today) {
+      if (savedInsight && savedDate === today && !savedInsight.includes('på plats')) {
         setAiInsight(savedInsight);
         return;
       }
@@ -126,7 +126,8 @@ export const Dashboard: React.FC<{
 
       const lowAttendancePlayers = players.filter(p => attendanceCounts[p.id] === 0);
       if (lowAttendancePlayers.length > 0) {
-        items.push({ text: `${lowAttendancePlayers.length} spelare har missat de senaste 3 passen`, type: 'warning', icon: Users });
+        const passText = recentSessions.length === 1 ? 'det senaste passet' : `de senaste ${recentSessions.length} passen`;
+        items.push({ text: `${lowAttendancePlayers.length} spelare har missat ${passText}`, type: 'warning', icon: Users });
         cold = lowAttendancePlayers.slice(0, 2).map(p => ({ player: p, reason: 'Låg närvaro' }));
       }
 
