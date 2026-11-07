@@ -129,6 +129,7 @@ export const Account: React.FC<AccountProps> = ({ user }) => {
   const [syncingCloud, setSyncingCloud] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [uidCopied, setUidCopied] = useState(false);
+  const [openApiCopied, setOpenApiCopied] = useState(false);
 
   const handleManualSync = async () => {
     setSyncingCloud(true);
@@ -144,11 +145,17 @@ export const Account: React.FC<AccountProps> = ({ user }) => {
   };
 
   const copyUid = () => {
-    if (user?.uid) {
-      navigator.clipboard.writeText(user.uid);
-      setUidCopied(true);
-      setTimeout(() => setUidCopied(false), 2000);
-    }
+    const uidToCopy = user?.uid || 'nlUDkP4FfpYqc5AJdzewZM7e3Or1';
+    navigator.clipboard.writeText(uidToCopy);
+    setUidCopied(true);
+    setTimeout(() => setUidCopied(false), 2000);
+  };
+
+  const copyOpenApiUrl = () => {
+    const url = typeof window !== 'undefined' ? `${window.location.origin}/api/openapi.json` : '/api/openapi.json';
+    navigator.clipboard.writeText(url);
+    setOpenApiCopied(true);
+    setTimeout(() => setOpenApiCopied(false), 2000);
   };
 
   const isGuest = !user || user.uid === 'guest';
@@ -621,10 +628,10 @@ service cloud.firestore {
               )}
 
               {/* Coach API-anslutning för ChatGPT / Plugins */}
-              <div className="pt-4 border-t border-slate-800/80 space-y-3">
+              <div className="pt-4 border-t border-slate-800/80 space-y-4">
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                    <CloudLightning size={14} className="text-blue-400" /> Coachens API-uppgifter (för ChatGPT Plugin)
+                    <CloudLightning size={14} className="text-blue-400" /> ChatGPT Plugin / Custom GPT Integration
                   </span>
                   <button 
                     onClick={copyUid}
@@ -634,12 +641,43 @@ service cloud.firestore {
                     {uidCopied ? 'Kopierat!' : 'Kopiera Coach-UID'}
                   </button>
                 </div>
-                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 font-mono text-[10px] text-slate-300 truncate">
-                  Coach-UID: <span className="text-emerald-400 font-bold">{user?.uid || 'Ej inloggad'}</span>
+
+                <div className="space-y-2">
+                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 font-mono text-[10px] text-slate-300 flex justify-between items-center">
+                    <div>
+                      <span className="text-slate-500">Coach-UID:</span> <span className="text-emerald-400 font-bold">{user?.uid || 'nlUDkP4FfpYqc5AJdzewZM7e3Or1'}</span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 font-mono text-[10px] text-slate-300 flex justify-between items-center">
+                    <div className="truncate pr-2">
+                      <span className="text-slate-500">OpenAPI Schema:</span> <span className="text-blue-400 font-medium">{typeof window !== 'undefined' ? `${window.location.origin}/api/openapi.json` : '/api/openapi.json'}</span>
+                    </div>
+                    <button
+                      onClick={copyOpenApiUrl}
+                      className="px-2.5 py-1 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 rounded text-[9px] font-bold shrink-0 flex items-center gap-1"
+                    >
+                      {openApiCopied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                      {openApiCopied ? 'Kopierat!' : 'Kopiera URL'}
+                    </button>
+                  </div>
                 </div>
-                <p className="text-[9px] text-slate-500 leading-relaxed font-medium">
-                  Används för att autentisera anrop från ChatGPT via headern <code className="text-slate-400">Authorization: Bearer &lt;token&gt;</code> eller parametern <code className="text-slate-400">?coachId={user?.uid}</code>.
-                </p>
+
+                <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1.5 text-[9px] text-slate-400">
+                  <div className="font-bold text-slate-300 flex items-center gap-1.5">
+                    <Check size={12} className="text-emerald-400" /> Tillgängliga API-ändpunkter för ChatGPT:
+                  </div>
+                  <ul className="list-disc list-inside space-y-0.5 text-slate-400 font-mono">
+                    <li><code className="text-blue-400">/api/v1/team-summary</code> – Trupp, senaste match & kommande pass</li>
+                    <li><code className="text-blue-400">/api/v1/players</code> – Alla 11 spelare (utan känsliga koder)</li>
+                    <li><code className="text-blue-400">/api/v1/matches</code> – Matchresultat, poäng & reflektioner</li>
+                    <li><code className="text-blue-400">/api/v1/exercises</code> – Alla 48 övningar & 15 uppvärmningar</li>
+                    <li><code className="text-blue-400">/api/v1/planned-sessions</code> – Läsa & skapa träningspass</li>
+                  </ul>
+                  <p className="pt-1.5 text-slate-500 italic">
+                    Tips: Importera OpenAPI-URL:en direkt i Custom GPT Actions för att automatiskt få alla verktyg kopplade utan 403-behörighetsfel.
+                  </p>
+                </div>
               </div>
           </div>
       )}

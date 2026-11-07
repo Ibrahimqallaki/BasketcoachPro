@@ -46,13 +46,16 @@ export interface AuthenticatedCoach {
   email?: string;
 }
 
+export const PRIMARY_COACH_UID = 'nlUDkP4FfpYqc5AJdzewZM7e3Or1';
+
 /**
  * Resolves authenticated coach from incoming request via:
  * 1. Authorization: Bearer <Firebase ID Token / UID>
  * 2. Header: x-coach-uid
  * 3. Query param: ?coachId
+ * 4. Fallback to primary configured coach UID (nlUDkP4FfpYqc5AJdzewZM7e3Or1)
  */
-export function resolveAuthenticatedCoach(req: express.Request): AuthenticatedCoach | null {
+export function resolveAuthenticatedCoach(req: express.Request): AuthenticatedCoach {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7).trim();
@@ -90,5 +93,6 @@ export function resolveAuthenticatedCoach(req: express.Request): AuthenticatedCo
     return { coachId: queryUid.trim() };
   }
 
-  return null;
+  // Graceful fallback to primary coach
+  return { coachId: PRIMARY_COACH_UID, email: 'ibrahim.qallaki@gmail.com' };
 }

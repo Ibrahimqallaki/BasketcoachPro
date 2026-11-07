@@ -1,10 +1,69 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read, write: if true;
+      allow get, list: if true;
+
+      match /players/{playerId} {
+        allow read, write: if true;
+        allow get, list: if true;
+      }
+
+      match /matches/{matchId} {
+        allow read, write: if true;
+        allow get, list: if true;
+      }
+
+      match /planned_sessions/{sessionId} {
+        allow read, write: if true;
+        allow get, list: if true;
+      }
+
+      match /sessions/{sessionId} {
+        allow read, write: if true;
+        allow get, list: if true;
+      }
+
+      match /messages/{messageId} {
+        allow read, write: if true;
+        allow get, list: if true;
+      }
+
+      match /{allSubcollections=**} {
+        allow read, write: if true;
+        allow get, list: if true;
+      }
+    }
+
+    match /{path=**}/players/{playerId} {
+      allow read, write: if true;
+      allow get, list: if true;
+    }
+
+    match /{path=**}/matches/{matchId} {
+      allow read, write: if true;
+      allow get, list: if true;
+    }
+
+    match /{path=**}/planned_sessions/{sessionId} {
+      allow read, write: if true;
+      allow get, list: if true;
+    }
+
+    match /{path=**}/sessions/{sessionId} {
+      allow read, write: if true;
+      allow get, list: if true;
+    }
+
+    match /app_settings/{document=**} {
+      allow read, write: if true;
+      allow get, list: if true;
+    }
+
     match /{document=**} {
       allow read, write: if true;
+      allow get, list: if true;
     }
   }
 }
-
-

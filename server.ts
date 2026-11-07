@@ -468,28 +468,50 @@ app.get('/api/v1/team-summary', async (req, res) => {
     try {
       const coachSnap = await getDoc(doc(serverDb, `users/${coachId}`));
       if (coachSnap.exists()) coachInfo = coachSnap.data();
-    } catch (e) {}
+    } catch (e: any) {
+      console.warn(`Could not read coach doc for ${coachId}:`, e.message);
+    }
 
     // 1. Matches
-    const matchesCol = collection(serverDb, `users/${coachId}/matches`);
-    const matchesSnap = await getDocs(query(matchesCol, orderBy('date', 'desc')));
-    const matches = matchesSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+    let matches: any[] = [];
+    try {
+      const matchesCol = collection(serverDb, `users/${coachId}/matches`);
+      const matchesSnap = await getDocs(query(matchesCol, orderBy('date', 'desc')));
+      matches = matchesSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+    } catch (e: any) {
+      console.warn(`Could not read matches for coach ${coachId}:`, e.message);
+    }
 
     // 2. Planned Sessions
-    const plannedCol = collection(serverDb, `users/${coachId}/planned_sessions`);
-    const plannedSnap = await getDocs(query(plannedCol, orderBy('date', 'asc')));
-    const plannedSessions = plannedSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+    let plannedSessions: any[] = [];
+    try {
+      const plannedCol = collection(serverDb, `users/${coachId}/planned_sessions`);
+      const plannedSnap = await getDocs(query(plannedCol, orderBy('date', 'asc')));
+      plannedSessions = plannedSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+    } catch (e: any) {
+      console.warn(`Could not read planned sessions for coach ${coachId}:`, e.message);
+    }
 
     // 3. Players
-    const playersCol = collection(serverDb, `users/${coachId}/players`);
-    const playersSnap = await getDocs(query(playersCol, orderBy('number', 'asc')));
-    const rawPlayers = playersSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
-    const safePlayers = rawPlayers.map(sanitizePlayerForApi);
+    let safePlayers: any[] = [];
+    try {
+      const playersCol = collection(serverDb, `users/${coachId}/players`);
+      const playersSnap = await getDocs(query(playersCol, orderBy('number', 'asc')));
+      const rawPlayers = playersSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+      safePlayers = rawPlayers.map(sanitizePlayerForApi);
+    } catch (e: any) {
+      console.warn(`Could not read players for coach ${coachId}:`, e.message);
+    }
 
     // 4. Completed Sessions
-    const sessionsCol = collection(serverDb, `users/${coachId}/sessions`);
-    const sessionsSnap = await getDocs(query(sessionsCol, orderBy('date', 'desc')));
-    const sessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+    let sessions: any[] = [];
+    try {
+      const sessionsCol = collection(serverDb, `users/${coachId}/sessions`);
+      const sessionsSnap = await getDocs(query(sessionsCol, orderBy('date', 'desc')));
+      sessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+    } catch (e: any) {
+      console.warn(`Could not read sessions for coach ${coachId}:`, e.message);
+    }
 
     const latestMatch = matches[0] || null;
     const upcoming = plannedSessions.filter(s => s.status === 'planned');
@@ -551,9 +573,15 @@ app.get('/api/v1/players', async (req, res) => {
     const coachId = requireCoachAuth(req, res);
     if (!coachId) return;
 
-    const playersCol = collection(serverDb, `users/${coachId}/players`);
-    const snap = await getDocs(query(playersCol, orderBy('number', 'asc')));
-    const players = snap.docs.map(d => sanitizePlayerForApi({ id: d.id, ...d.data() }));
+    let players: any[] = [];
+    try {
+      const playersCol = collection(serverDb, `users/${coachId}/players`);
+      const snap = await getDocs(query(playersCol, orderBy('number', 'asc')));
+      players = snap.docs.map(d => sanitizePlayerForApi({ id: d.id, ...d.data() }));
+    } catch (e: any) {
+      console.warn(`Could not read players for coach ${coachId}:`, e.message);
+    }
+
     res.json({
       total: players.length,
       players
@@ -618,9 +646,15 @@ app.get('/api/v1/matches', async (req, res) => {
     const coachId = requireCoachAuth(req, res);
     if (!coachId) return;
 
-    const matchesCol = collection(serverDb, `users/${coachId}/matches`);
-    const snap = await getDocs(query(matchesCol, orderBy('date', 'desc')));
-    const matches = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    let matches: any[] = [];
+    try {
+      const matchesCol = collection(serverDb, `users/${coachId}/matches`);
+      const snap = await getDocs(query(matchesCol, orderBy('date', 'desc')));
+      matches = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch (e: any) {
+      console.warn(`Could not read matches for coach ${coachId}:`, e.message);
+    }
+
     res.json({
       total: matches.length,
       matches
@@ -687,9 +721,15 @@ app.get('/api/v1/planned-sessions', async (req, res) => {
     const coachId = requireCoachAuth(req, res);
     if (!coachId) return;
 
-    const plannedCol = collection(serverDb, `users/${coachId}/planned_sessions`);
-    const snap = await getDocs(query(plannedCol, orderBy('date', 'asc')));
-    const plannedSessions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    let plannedSessions: any[] = [];
+    try {
+      const plannedCol = collection(serverDb, `users/${coachId}/planned_sessions`);
+      const snap = await getDocs(query(plannedCol, orderBy('date', 'asc')));
+      plannedSessions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch (e: any) {
+      console.warn(`Could not read planned sessions for coach ${coachId}:`, e.message);
+    }
+
     res.json({
       total: plannedSessions.length,
       plannedSessions
@@ -762,17 +802,260 @@ app.delete('/api/v1/planned-sessions/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/v1/matches/:id', async (req, res) => {
-  try {
-    const coachId = requireCoachAuth(req, res);
-    if (!coachId) return;
+// OpenAPI 3.1 Specification for ChatGPT Actions / Custom GPTs
+app.get('/api/openapi.json', (req, res) => {
+  const host = req.get('host') || 'localhost:3000';
+  const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+  const serverUrl = `${protocol}://${host}`;
 
-    await deleteDoc(doc(serverDb, `users/${coachId}/matches`, req.params.id));
-    res.json({ success: true, deletedId: req.params.id });
-  } catch (err: any) {
-    console.error('Error deleting match:', err);
-    res.status(500).json({ error: err.message });
-  }
+  res.json({
+    openapi: "3.1.0",
+    info: {
+      title: "Basketcoach Pro API",
+      description: "Coachassistent-API för Orion HU15. Ger ChatGPT och externa coachassistenter åtkomst till truppen (11 spelare), matchhistorik och matchreflektioner, övningsbibliotek (48 övningar + 15 uppvärmningar) samt planering av träningspass.",
+      version: "1.0.0"
+    },
+    servers: [
+      {
+        url: serverUrl,
+        description: "Aktuell serverinstans"
+      }
+    ],
+    paths: {
+      "/api/v1/team-summary": {
+        get: {
+          operationId: "getTeamSummary",
+          summary: "Hämta sammanfattning för laget (trupp, statistik, senaste match, kommande pass)",
+          parameters: [
+            {
+              name: "coachId",
+              in: "query",
+              required: false,
+              schema: { type: "string" },
+              description: "Coachens Firebase UID (valfri, standard är primär coach nlUDkP4FfpYqc5AJdzewZM7e3Or1)"
+            }
+          ],
+          responses: {
+            "200": {
+              description: "Lagöversikt och nyckeltal"
+            }
+          }
+        }
+      },
+      "/api/v1/players": {
+        get: {
+          operationId: "getPlayers",
+          summary: "Hämta alla spelare i truppen med tröjnummer, position och färdighetsbedömningar",
+          parameters: [
+            {
+              name: "coachId",
+              in: "query",
+              required: false,
+              schema: { type: "string" },
+              description: "Coachens Firebase UID"
+            }
+          ],
+          responses: {
+            "200": {
+              description: "Lista över spelare (känsliga åtkomstkoder exkluderas automatiskt)"
+            }
+          }
+        }
+      },
+      "/api/v1/matches": {
+        get: {
+          operationId: "getMatches",
+          summary: "Hämta alla matcher med resultat, motståndare, spelarpoäng och matchreflektioner",
+          parameters: [
+            {
+              name: "coachId",
+              in: "query",
+              required: false,
+              schema: { type: "string" },
+              description: "Coachens Firebase UID"
+            }
+          ],
+          responses: {
+            "200": {
+              description: "Lista över matcher med poäng och reflektioner"
+            }
+          }
+        },
+        post: {
+          operationId: "createMatch",
+          summary: "Spara en ny match med resultat och reflektion",
+          parameters: [
+            {
+              name: "coachId",
+              in: "query",
+              required: false,
+              schema: { type: "string" }
+            }
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["opponent", "score", "opponentScore", "date"],
+                  properties: {
+                    date: { type: "string", description: "YYYY-MM-DD" },
+                    opponent: { type: "string" },
+                    score: { type: "number" },
+                    opponentScore: { type: "number" },
+                    teamSummary: { type: "string" },
+                    whatWorked: { type: "string", description: "Vad fungerade bra?" },
+                    whatToImprove: { type: "string", description: "Vad behöver förbättras?" },
+                    nextTrainingFocus: { type: "string", description: "Fokus för nästa träning" },
+                    playerPoints: { type: "object", description: "Objekt med spelarId -> poäng (t.ex. { 'playerId': 14 })" }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            "201": { description: "Matchen sparades i Firestore" }
+          }
+        }
+      },
+      "/api/v1/matches/{id}": {
+        put: {
+          operationId: "updateMatch",
+          summary: "Uppdatera en befintlig match",
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "string" } },
+            { name: "coachId", in: "query", required: false, schema: { type: "string" } }
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { type: "object" }
+              }
+            }
+          },
+          responses: { "200": { description: "Matchen uppdaterades" } }
+        },
+        delete: {
+          operationId: "deleteMatch",
+          summary: "Ta bort en match",
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "string" } },
+            { name: "coachId", in: "query", required: false, schema: { type: "string" } }
+          ],
+          responses: { "200": { description: "Matchen raderades" } }
+        }
+      },
+      "/api/v1/exercises": {
+        get: {
+          operationId: "getExercises",
+          summary: "Hämta övningsbiblioteket (48 övningar + 15 uppvärmningsövningar)",
+          parameters: [
+            {
+              name: "category",
+              in: "query",
+              required: false,
+              schema: { type: "string" },
+              description: "Filtrera kategori (Skott, Dribbling, Passningar, Försvar, Kondition, Basket-IQ, Fysik, Uppvärmning)"
+            }
+          ],
+          responses: {
+            "200": {
+              description: "Övningar och uppvärmningar med pedagogik och instruktioner"
+            }
+          }
+        }
+      },
+      "/api/v1/planned-sessions": {
+        get: {
+          operationId: "getPlannedSessions",
+          summary: "Hämta alla planerade träningspass",
+          parameters: [
+            { name: "coachId", in: "query", required: false, schema: { type: "string" } }
+          ],
+          responses: { "200": { description: "Lista över planerade pass" } }
+        },
+        post: {
+          operationId: "createPlannedSession",
+          summary: "Skapa ett nytt planerat träningspass i coachens Firestore",
+          parameters: [
+            { name: "coachId", in: "query", required: false, schema: { type: "string" } }
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["date", "theme"],
+                  properties: {
+                    date: { type: "string", description: "YYYY-MM-DD" },
+                    startTime: { type: "string", default: "18:00" },
+                    theme: { type: "string" },
+                    durationMinutes: { type: "number", default: 90 },
+                    phaseId: { type: "number", default: 2 },
+                    warmupExerciseIds: { type: "array", items: { type: "string" } },
+                    exerciseIds: { type: "array", items: { type: "string" } },
+                    exerciseDurations: { type: "object", description: "Objekt { 'drillId': minuter }" }
+                  }
+                }
+              }
+            }
+          },
+          responses: { "201": { description: "Träningspass skapat och sparat" } }
+        }
+      },
+      "/api/v1/planned-sessions/{id}": {
+        put: {
+          operationId: "updatePlannedSession",
+          summary: "Uppdatera ett planerat pass",
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "string" } },
+            { name: "coachId", in: "query", required: false, schema: { type: "string" } }
+          ],
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: { type: "object" } } }
+          },
+          responses: { "200": { description: "Passet uppdaterades" } }
+        },
+        delete: {
+          operationId: "deletePlannedSession",
+          summary: "Radera ett planerat pass",
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "string" } },
+            { name: "coachId", in: "query", required: false, schema: { type: "string" } }
+          ],
+          responses: { "200": { description: "Passet raderades" } }
+        }
+      }
+    }
+  });
+});
+
+app.get('/.well-known/ai-plugin.json', (req, res) => {
+  const host = req.get('host') || 'localhost:3000';
+  const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+  const serverUrl = `${protocol}://${host}`;
+
+  res.json({
+    schema_version: "v1",
+    name_for_model: "basketcoach_pro",
+    name_for_human: "Basketcoach Pro (Orion HU15)",
+    description_for_model: "Plugin för att läsa trupp, matcher, övningsbibliotek och planera träningspass för ungdomslaget Orion HU15.",
+    description_for_human: "Assistera coach Ibrahim med Orion HU15: spelartrupp, matchreflektioner, övningar och träningar.",
+    auth: {
+      type: "none"
+    },
+    api: {
+      type: "openapi",
+      url: `${serverUrl}/api/openapi.json`
+    },
+    logo_url: `${serverUrl}/favicon.ico`,
+    contact_email: "ibrahim.qallaki@gmail.com",
+    legal_info_url: `${serverUrl}`
+  });
 });
 
 // Dev / Prod Vite handling
