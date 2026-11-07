@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { dataService } from '../services/dataService';
 import { 
   Play, Pause, RotateCcw, X, ChevronRight, Save, Check, Trophy, Loader2, 
@@ -376,6 +376,34 @@ export const Training: React.FC<TrainingProps> = ({ initialTab = 'upcoming', onD
   }, [draftReady, hasUnsavedWork, suppressDraft, onDraftStateChange]);
 
   useEffect(() => () => onDraftStateChange?.(false), [onDraftStateChange]);
+
+  // React may unmount Training immediately after a sidebar click, before the
+  // debounced autosave runs. Flush the latest snapshot synchronously on unmount.
+  const latestDraftRef = useRef<{
+    key: string | null;
+    ready: boolean;
+    dirty: boolean;
+    suppressed: boolean;
+    snapshot: TrainingDraft;
+  } | null>(null);
+  latestDraftRef.current = {
+    key: draftKey,
+    ready: draftReady,
+    dirty: hasUnsavedWork,
+    suppressed: suppressDraft,
+    snapshot: draftSnapshot
+  };
+  useEffect(() => () => {
+    const current = latestDraftRef.current;
+    if (!current?.key || !current.ready || current.suppressed) return;
+    try {
+      if (current.dirty) {
+        window.sessionStorage.setItem(current.key, JSON.stringify(current.snapshot));
+      } else {
+        window.sessionStorage.removeItem(current.key);
+      }
+    } catch { /* beforeunload warning remains the fallback */ }
+  }, []);
 
   const persistDraft = () => {
     if (!draftKey || !draftReady || suppressDraft) return;
