@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
 import { Roster } from './components/Roster';
-import { Plan } from './components/Plan';
 import { Training } from './components/Training';
 import { MatchEvaluation } from './components/MatchEvaluation';
 import { Account } from './components/Account';
@@ -12,7 +11,6 @@ import { PlayerPortal } from './components/PlayerPortal';
 import { AICoach } from './components/AICoach';
 import { CoachTools } from './components/CoachTools';
 import { MatchLiveScout } from './components/MatchLiveScout';
-import { WarmupLibrary } from './components/WarmupLibrary';
 import { ChatDashboard } from './components/ChatDashboard';
 import { auth, isFirebaseConfigured, googleProvider } from './services/firebase';
 import { dataService } from './services/dataService';
@@ -330,14 +328,14 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-[#020617] overflow-hidden text-slate-200 font-sans selection:bg-orange-500/30">
-      {!loggedInPlayer && <Sidebar activeView={currentView} onNavigate={setCurrentView} user={user} />}
+      {!loggedInPlayer && <Sidebar activeView={currentView === View.PLAN || currentView === View.WARMUP_LIBRARY ? View.TRAINING : currentView} onNavigate={setCurrentView} user={user} />}
       
       <main className="flex-1 flex flex-col overflow-x-hidden relative bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-[#020617] to-[#020617] w-full">
         {!loggedInPlayer && (
           <header className="h-20 flex items-center justify-between px-4 md:px-10 shrink-0 z-40">
             <div className="flex items-center gap-4">
               <h2 className="text-xl md:text-2xl font-black italic uppercase tracking-tighter text-white">
-                {currentView === View.ACCOUNT ? 'Inställningar' : currentView.replace('_', ' ')}
+                {currentView === View.ACCOUNT ? 'Inställningar' : currentView === View.PLAN || currentView === View.WARMUP_LIBRARY ? 'TRÄNA' : currentView.replace('_', ' ')}
               </h2>
             </div>
             
@@ -369,9 +367,9 @@ const App: React.FC = () => {
                         />
                       );
                       case View.ROSTER: return <Roster onSimulatePlayerLogin={handleSimulatePlayerLogin} />;
-                      case View.PLAN: return <Plan />;
+                      case View.PLAN: return <Training initialTab="plan" />;
                       case View.TRAINING: return <Training />;
-                      case View.WARMUP_LIBRARY: return <WarmupLibrary />;
+                      case View.WARMUP_LIBRARY: return <Training initialTab="warmup" />;
                       case View.MATCH_EVAL: return <MatchEvaluation />;
                       case View.VIDEO_ANALYSIS: return <CoachTools initialTool="video" onNavigate={setCurrentView} />;
                       case View.AI_COACH: return <CoachTools initialTool="ai" onNavigate={setCurrentView} />;
