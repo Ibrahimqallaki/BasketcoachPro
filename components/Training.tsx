@@ -35,6 +35,7 @@ type TrainingTab = 'upcoming' | 'sessions' | 'active' | 'warmup' | 'plan';
 
 interface TrainingProps {
   initialTab?: TrainingTab;
+  onDraftStateChange?: (hasDraft: boolean) => void;
 }
 
 interface PlaylistItem {
@@ -44,6 +45,62 @@ interface PlaylistItem {
   type: 'warmup' | 'main';
   exercise: Exercise | WarmupExercise;
 }
+
+
+type AttendanceStatus = 'närvarande' | 'delvis' | 'frånvarande';
+
+interface TrainingDraft {
+  version: 1;
+  savedAt: number;
+  step: TrainingStep;
+  phaseId: number | null;
+  selectedExerciseIds: string[];
+  selectedWarmupIds: string[];
+  playlist: Array<{ id: string; type: 'warmup' | 'main'; duration: number }>;
+  attendance: Record<string, AttendanceStatus>;
+  evaluations: Evaluation[];
+  date: string;
+  startTime: string;
+  theme: string;
+  editingPlannedSessionId: string | null;
+  activePlannedSessionId: string | null;
+  activePlaylistItemIndex: number;
+  timer: number;
+  countdownTime: number;
+  timerMode: 'stopwatch' | 'countdown';
+  viewMode: 'basket' | 'fys';
+  gradingFramework: 'SBBF' | 'NBA' | 'COMBO';
+  gradingPlayerId: string | null;
+  currentScores: number[];
+  currentNote: string;
+}
+
+const TRAINING_DRAFT_PREFIX = 'basketcoach_training_draft_v1:';
+const TRAINING_DRAFT_MAX_AGE = 24 * 60 * 60 * 1000;
+
+const readTrainingDraft = (key: string | null): TrainingDraft | null => {
+  if (!key) return null;
+  try {
+    const stored = window.sessionStorage.getItem(key);
+    if (!stored) return null;
+    const draft = JSON.parse(stored) as TrainingDraft;
+    if (
+      draft.version !== 1 ||
+      !Number.isFinite(draft.savedAt) ||
+      Date.now() - draft.savedAt > TRAINING_DRAFT_MAX_AGE ||
+      Date.now() < draft.savedAt ||
+      !Array.isArray(draft.playlist) ||
+      !Array.isArray(draft.selectedExerciseIds)
+    ) {
+      window.sessionStorage.removeItem(key);
+      return null;
+    }
+    return draft;
+  } catch {
+    // Private browsing or an invalid old draft must not prevent training.
+    return null;
+  }
+};
 
 const SBBF_CRITERIA = [
   { label: 'Spelförståelse', icon: BrainCircuit, desc: 'Beslut & Speluppfattning' },
@@ -77,7 +134,7 @@ const FYS_CRITERIA = [
   { label: 'Vilja', icon: ArrowUpCircle, desc: 'Mental inställning' }
 ];
 
-export const Training: React.FC<TrainingProps> = ({ initialTab = 'upcoming' }) => {
+export const Training: React.FC<TrainingProps> = ({ initialTab = 'upcoming', onDraftStateChange }) => {
   const [activeTab, setActiveTab] = useState<TrainingTab>(initialTab);
   const [step, setStep] = useState<TrainingStep>('selection');
   const [phases, setPhases] = useState<Phase[]>([]);
@@ -95,6 +152,19 @@ export const Training: React.FC<TrainingProps> = ({ initialTab = 'upcoming' }) =
   const [isSaving, setIsSaving] = useState(false);
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
+  const [draftReady, setDraftReady] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [draftStorageError, setDraftStorageError] = useState(false);
+  const [suppressDraft, setSuppressDraft] = useState(false);
+  // Per-user and per-browser-tab. No browser draft is stored for anonymous users.
+  const [draftKey] = useState<string | null>(() => {
+    const userPath = dataService.getUserPath();
+    return userPath ? TRAINING_DRAFT_PREFIX + userPath : null;
+  });
   const [attendance, setAttendance] = useState<Record<string, 'närvarande' | 'delvis' | 'frånvarande'>>({});
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [allSessions, setAllSessions] = useState<TrainingSession[]>([]);
@@ -161,6 +231,7 @@ export const Training: React.FC<TrainingProps> = ({ initialTab = 'upcoming' }) =
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [p, s, ph, pl] = await Promise.all([
         dataService.getPlayers(),
@@ -172,17 +243,187 @@ export const Training: React.FC<TrainingProps> = ({ initialTab = 'upcoming' }) =
       setAllSessions(s);
       setPhases(ph);
       setPlannedSessions(pl);
-      if (ph.length > 0 && !selectedPhase) setSelectedPhase(ph[0]);
-      
-      const initialAttendance: any = {};
-      p.forEach(player => initialAttendance[player.id] = 'närvarande');
-      setAttendance(initialAttendance);
+      const previousDraft = readTrainingDraft(draftKey);
+      const defaultAttendance: Record<string, AttendanceStatus> = {};
+      p.forEach(player => { defaultAttendance[player.id] = 'närvarande'; });
+
+      if (previousDraft) {
+        const allExercises = ph.flatMap(phase => phase.exercises);
+        const selectedIds = new Set(previousDraft.selectedExerciseIds);
+        const foundExercises = allExercises.filter(ex => selectedIds.has(ex.id));
+        const warmupIds = new Set(mockWarmupExercises.map(ex => ex.id));
+        const restoredPlaylist: PlaylistItem[] = previousDraft.playlist.flatMap(item => {
+          const exercise = item.type === 'warmup'
+            ? mockWarmupExercises.find(ex => ex.id === item.id)
+            : allExercises.find(ex => ex.id === item.id);
+          if (!exercise) return [];
+          return [{
+            id: item.id,
+            type: item.type,
+            title: exercise.title,
+            duration: Number.isFinite(item.duration) && item.duration > 0 ? item.duration : 600,
+            exercise
+          }];
+        });
+        const validPlayerIds = new Set(p.map(player => player.id));
+        const draftAttendance = previousDraft.attendance || {};
+        p.forEach(player => {
+          const status = draftAttendance[player.id];
+          if (status === 'frånvarande' || status === 'delvis' || status === 'närvarande') {
+            defaultAttendance[player.id] = status;
+          }
+        });
+        setSelectedPhase(ph.find(phase => phase.id === previousDraft.phaseId) || ph[0] || null);
+        setSelectedExercises(foundExercises);
+        setSelectedWarmupIds((previousDraft.selectedWarmupIds || []).filter(id => warmupIds.has(id)));
+        setPlaylist(restoredPlaylist);
+        setEvaluations((previousDraft.evaluations || []).filter(ev => validPlayerIds.has(ev.playerId)));
+        setSessionDate(previousDraft.date || new Date().toISOString().split('T')[0]);
+        setSessionStartTime(previousDraft.startTime || '18:00');
+        setSessionTheme(previousDraft.theme || '');
+        setEditingPlannedSessionId(previousDraft.editingPlannedSessionId || null);
+        setActivePlannedSessionId(previousDraft.activePlannedSessionId || null);
+        setActivePlaylistItemIndex(Math.min(Math.max(0, previousDraft.activePlaylistItemIndex || 0), Math.max(0, restoredPlaylist.length - 1)));
+        setTimer(Math.max(0, previousDraft.timer || 0));
+        setCountdownTime(Math.max(0, previousDraft.countdownTime ?? 600));
+        setTimerMode(previousDraft.timerMode === 'countdown' ? 'countdown' : 'stopwatch');
+        setViewMode(previousDraft.viewMode === 'fys' ? 'fys' : 'basket');
+        setGradingFramework(['SBBF', 'NBA', 'COMBO'].includes(previousDraft.gradingFramework) ? previousDraft.gradingFramework : 'SBBF');
+        const restoringPlayer = p.find(player => player.id === previousDraft.gradingPlayerId);
+        setGradingPlayer(restoringPlayer || null);
+        setCurrentScores(previousDraft.currentScores || []);
+        setCurrentNote(previousDraft.currentNote || '');
+        // A resumed live session starts paused: it must never run unattended.
+        setIsPaused(true);
+        const validStep = ['planning', 'checkin', 'live'].includes(previousDraft.step) && restoredPlaylist.length > 0
+          ? previousDraft.step : 'selection';
+        setStep(validStep);
+        if (initialTab === 'upcoming') setActiveTab('active');
+        setDraftRestored(true);
+      } else {
+        setSelectedPhase(ph[0] || null);
+        setAttendance(defaultAttendance);
+      }
+      setAttendance(defaultAttendance);
+      setDraftReady(true);
+    } catch (error) {
+      console.error('Kunde inte läsa träningsdata:', error);
+      setLoadError('Kunde inte läsa träningsdata. Kontrollera anslutningen och försök igen.');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { loadData(); }, [activeTab]);
+  // Training data loads once. Changing tabs must not reset attendance or evaluations.
+  useEffect(() => { void loadData(); }, []);
+
+  useEffect(() => {
+    const syncOnline = () => setIsOnline(navigator.onLine);
+    window.addEventListener('online', syncOnline);
+    window.addEventListener('offline', syncOnline);
+    return () => {
+      window.removeEventListener('online', syncOnline);
+      window.removeEventListener('offline', syncOnline);
+    };
+  }, []);
+
+  const hasUnsavedWork = (
+    step !== 'selection' ||
+    selectedExercises.length > 0 ||
+    selectedWarmupIds.length > 0 ||
+    evaluations.length > 0 ||
+    !!sessionTheme.trim() ||
+    !!editingPlannedSessionId ||
+    !!activePlannedSessionId ||
+    sessionDate !== new Date().toISOString().split('T')[0] ||
+    sessionStartTime !== '18:00'
+  );
+
+  const draftSnapshot = useMemo<TrainingDraft>(() => ({
+    version: 1,
+    savedAt: Date.now(),
+    step,
+    phaseId: selectedPhase?.id ?? null,
+    selectedExerciseIds: selectedExercises.map(ex => ex.id),
+    selectedWarmupIds,
+    playlist: playlist.map(item => ({ id: item.id, type: item.type, duration: item.duration })),
+    attendance,
+    evaluations,
+    date: sessionDate,
+    startTime: sessionStartTime,
+    theme: sessionTheme,
+    editingPlannedSessionId,
+    activePlannedSessionId,
+    activePlaylistItemIndex,
+    timer,
+    countdownTime,
+    timerMode,
+    viewMode,
+    gradingFramework,
+    gradingPlayerId: gradingPlayer?.id || null,
+    currentScores,
+    currentNote
+  }), [
+    step, selectedPhase, selectedExercises, selectedWarmupIds, playlist, attendance,
+    evaluations, sessionDate, sessionStartTime, sessionTheme, editingPlannedSessionId,
+    activePlannedSessionId, activePlaylistItemIndex, timer, countdownTime, timerMode,
+    viewMode, gradingFramework, gradingPlayer, currentScores, currentNote
+  ]);
+
+  useEffect(() => {
+    if (!draftReady) return;
+    onDraftStateChange?.(hasUnsavedWork && !suppressDraft);
+  }, [draftReady, hasUnsavedWork, suppressDraft, onDraftStateChange]);
+
+  useEffect(() => () => onDraftStateChange?.(false), [onDraftStateChange]);
+
+  const persistDraft = () => {
+    if (!draftKey || !draftReady || suppressDraft) return;
+    try {
+      if (hasUnsavedWork) window.sessionStorage.setItem(draftKey, JSON.stringify(draftSnapshot));
+      else window.sessionStorage.removeItem(draftKey);
+    } catch {
+      setDraftStorageError(true);
+    }
+  };
+
+  useEffect(() => {
+    if (!draftReady || !draftKey || suppressDraft) return;
+    const timeout = window.setTimeout(persistDraft, 600);
+    return () => window.clearTimeout(timeout);
+  }, [draftReady, draftKey, suppressDraft, hasUnsavedWork, draftSnapshot]);
+
+  useEffect(() => {
+    if (!draftReady || !hasUnsavedWork || suppressDraft) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      persistDraft();
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    const onPageHide = () => persistDraft();
+    window.addEventListener('beforeunload', onBeforeUnload);
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      window.removeEventListener('pagehide', onPageHide);
+    };
+  }, [draftReady, draftKey, hasUnsavedWork, suppressDraft, draftSnapshot]);
+
+  const clearDraftAfterSuccessfulSave = () => {
+    setSuppressDraft(true);
+    setDraftRestored(false);
+    if (draftKey) {
+      try { window.sessionStorage.removeItem(draftKey); } catch { /* storage unavailable */ }
+    }
+  };
+
+  const canSaveToCloud = () => {
+    if (dataService.getUserPath() && !isOnline) {
+      setSaveError('Ingen internetanslutning. Ditt arbete finns kvar i den här fliken. Anslut igen innan du sparar.');
+      return false;
+    }
+    return true;
+  };
 
   useEffect(() => {
     let interval: number;
