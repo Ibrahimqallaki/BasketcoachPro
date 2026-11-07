@@ -473,6 +473,12 @@ export const Plan: React.FC = () => {
                                   {viewMode === 'fys' ? 'Fysisk Utveckling' : 'Basketens ABC'}
                                 </span>
                                <span className="text-slate-600 font-black text-[8px] uppercase">{ex.category}</span>
+                               {ex.inspiration && (
+                                 <span className="rounded border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[8px] font-black uppercase tracking-widest text-cyan-300">
+                                   HU15 · {ex.inspiration}
+                                 </span>
+                               )}
+                               {ex.duration && <span className="text-slate-500 text-[9px] font-semibold">{ex.duration}</span>}
                                {isCustom && <span className="bg-indigo-500/20 text-indigo-400 px-2 py-0.5 rounded text-[8px] font-black uppercase">Egen Övning</span>}
                              </div>
                              <h4 className="text-lg md:text-2xl font-black text-white italic uppercase tracking-tighter mt-1 line-clamp-2 md:truncate break-words">{ex.title}</h4>

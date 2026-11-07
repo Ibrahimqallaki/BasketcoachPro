@@ -154,6 +154,7 @@ export interface Badge {
 export interface Exercise {
   id: string;
   title: string;
+  inspiration?: 'Svensk Basket' | 'USA Basketball';
   category: SkillCategory;
   level?: 'Nybörjare' | 'Medel' | 'Avancerad';
   duration?: string;
