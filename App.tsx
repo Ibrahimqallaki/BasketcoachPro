@@ -23,6 +23,7 @@ import { View, Player } from './types';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>(View.DASHBOARD);
+  const [hasUnsavedTraining, setHasUnsavedTraining] = useState(false);
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isDenied, setIsDenied] = useState(false);
@@ -36,6 +37,16 @@ const App: React.FC = () => {
 
   // Live Scout State
   const [activeMatchId, setActiveMatchId] = useState<string | null>(null);
+
+  const handleNavigate = (nextView: View) => {
+    const trainingViews = [View.TRAINING, View.PLAN, View.WARMUP_LIBRARY];
+    const leavingTraining = trainingViews.includes(currentView) && !trainingViews.includes(nextView);
+    if (leavingTraining && hasUnsavedTraining &&
+        !window.confirm('Du har osparat träningsarbete. Vill du lämna Träna? Det tillfälliga utkastet finns kvar i den här webbläsarfliken.')) {
+      return;
+    }
+    setCurrentView(nextView);
+  };
 
   useEffect(() => {
     // Kolla om vi har en match-id i URL:en (för scouten)
@@ -176,6 +187,11 @@ const App: React.FC = () => {
   };
 
   const handleLogout = async () => {
+      // A signed-out coach must not leave youth training drafts behind on a shared device.
+      if (user?.uid) {
+        try { window.sessionStorage.removeItem('basketcoach_training_draft_v1:users/' + user.uid); } catch { /* storage unavailable */ }
+      }
+      setHasUnsavedTraining(false);
       if (loggedInPlayer) {
           const wasSimulated = user && !user.isAnonymous && !user.uid.startsWith('demo');
           setLoggedInPlayer(null);
@@ -328,7 +344,7 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-[#020617] overflow-hidden text-slate-200 font-sans selection:bg-orange-500/30">
-      {!loggedInPlayer && <Sidebar activeView={currentView === View.PLAN || currentView === View.WARMUP_LIBRARY ? View.TRAINING : currentView} onNavigate={setCurrentView} user={user} />}
+      {!loggedInPlayer && <Sidebar activeView={currentView === View.PLAN || currentView === View.WARMUP_LIBRARY ? View.TRAINING : currentView} onNavigate={handleNavigate} user={user} />}
       
       <main className="flex-1 flex flex-col overflow-x-hidden relative bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-[#020617] to-[#020617] w-full">
         {!loggedInPlayer && (
@@ -340,7 +356,7 @@ const App: React.FC = () => {
             </div>
             
             <button
-                onClick={() => setCurrentView(View.ACCOUNT)}
+                onClick={() => handleNavigate(View.ACCOUNT)}
                 className="w-10 h-10 rounded-xl bg-slate-800 border border-white/10 overflow-hidden shrink-0 flex items-center justify-center hover:border-orange-500 transition-all shadow-lg active:scale-95"
                 title="Mitt Konto"
             >
@@ -367,9 +383,9 @@ const App: React.FC = () => {
                         />
                       );
                       case View.ROSTER: return <Roster onSimulatePlayerLogin={handleSimulatePlayerLogin} />;
-                      case View.PLAN: return <Training initialTab="plan" />;
-                      case View.TRAINING: return <Training />;
-                      case View.WARMUP_LIBRARY: return <Training initialTab="warmup" />;
+                      case View.PLAN: return <Training initialTab="plan" onDraftStateChange={setHasUnsavedTraining} />;
+                      case View.TRAINING: return <Training onDraftStateChange={setHasUnsavedTraining} />;
+                      case View.WARMUP_LIBRARY: return <Training initialTab="warmup" onDraftStateChange={setHasUnsavedTraining} />;
                       case View.MATCH_EVAL: return <MatchEvaluation />;
                       case View.VIDEO_ANALYSIS: return <CoachTools initialTool="video" onNavigate={setCurrentView} />;
                       case View.AI_COACH: return <CoachTools initialTool="ai" onNavigate={setCurrentView} />;
