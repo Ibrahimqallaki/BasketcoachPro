@@ -42,8 +42,7 @@ export const chatService = {
     coachId: string
   ): Promise<void> => {
     if (!isFirebaseConfigured || !db) {
-      console.warn("Firebase not configured, cannot send message.");
-      return;
+      throw new Error('Chatten är inte tillgänglig. Försök logga in igen.');
     }
 
     try {
@@ -73,9 +72,13 @@ export const chatService = {
     coachId: string,
     currentUserId: string,
     recipientIds: string | string[],
-    callback: (messages: ChatMessage[]) => void
+    callback: (messages: ChatMessage[]) => void,
+    onError?: (error: Error) => void
   ): (() => void) => {
-    if (!isFirebaseConfigured || !db) return () => {};
+    if (!isFirebaseConfigured || !db) {
+      onError?.(new Error('Firebase är inte konfigurerat.'));
+      return () => {};
+    }
 
     try {
       const messagesRef = collection(db, `users/${coachId}/messages`);
@@ -87,8 +90,7 @@ export const chatService = {
 
       const q = query(
         messagesRef,
-        where('conversationId', 'in', conversationIds),
-        limit(200)
+        where('conversationId', 'in', conversationIds)
       );
 
       return onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
@@ -98,6 +100,7 @@ export const chatService = {
           return {
             id: d.id,
             ...data,
+            readBy: Array.isArray(data.readBy) ? data.readBy : [],
             timestamp: timestamp.toISOString()
           } as ChatMessage;
         });
@@ -108,9 +111,13 @@ export const chatService = {
         );
 
         callback(sortedMessages);
+      }, (error) => {
+        console.error('Error reading conversation:', error);
+        onError?.(error);
       });
     } catch (error) {
       console.error("Error subscribing to messages:", error);
+      onError?.(error instanceof Error ? error : new Error('Chatten kunde inte läsas.'));
       return () => {};
     }
   },
@@ -120,7 +127,8 @@ export const chatService = {
    */
   subscribeToAllMessages: (
     coachId: string,
-    callback: (messages: ChatMessage[]) => void
+    callback: (messages: ChatMessage[]) => void,
+    onError?: (error: Error) => void
   ): (() => void) => {
     if (!isFirebaseConfigured || !db) return () => {};
 
@@ -135,13 +143,18 @@ export const chatService = {
           return {
             id: d.id,
             ...data,
+            readBy: Array.isArray(data.readBy) ? data.readBy : [],
             timestamp: timestamp.toISOString()
           } as ChatMessage;
         });
         callback(messages);
+      }, (error) => {
+        console.error('Error reading message overview:', error);
+        onError?.(error);
       });
     } catch (error) {
       console.error("Error subscribing to all messages:", error);
+      onError?.(error instanceof Error ? error : new Error('Chattöversikten kunde inte läsas.'));
       return () => {};
     }
   },
