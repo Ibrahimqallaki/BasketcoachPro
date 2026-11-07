@@ -42,7 +42,7 @@ const App: React.FC = () => {
     const trainingViews = [View.TRAINING, View.PLAN, View.WARMUP_LIBRARY];
     const leavingTraining = trainingViews.includes(currentView) && !trainingViews.includes(nextView);
     if (leavingTraining && hasUnsavedTraining &&
-        !window.confirm('Du har osparat träningsarbete. Vill du lämna Träna? Det tillfälliga utkastet finns kvar i den här webbläsarfliken.')) {
+        !window.confirm('Du har osparat träningsarbete. Vill du lämna Träna? Spara innan du lämnar. Om webbläsaren tillåter säkerhetskopiering kan du fortsätta i samma flik.')) {
       return;
     }
     setCurrentView(nextView);
