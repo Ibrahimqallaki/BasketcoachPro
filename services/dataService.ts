@@ -1,6 +1,7 @@
 
 import { Player, TrainingSession, PlannedSession, MatchRecord, Homework, Phase, Exercise, AppTicket, TicketStatus, WarmupExercise } from '../types';
 import { mockPlayers, mockPhases, mockWarmupExercises } from './mockData';
+import { hu15ExercisesByPhase } from './hu15ExerciseLibrary';
 import { db, auth, isFirebaseConfigured } from './firebase';
 // Fix: Added @ts-ignore to bypass environment-specific resolution issues with Firebase exports
 // @ts-ignore
@@ -468,7 +469,12 @@ export const dataService = {
   getUnifiedPhases: async (coachId?: string): Promise<Phase[]> => {
     const custom = await dataService.getCustomExercises(coachId);
     const customName = await dataService.getCustomPhaseName(coachId);
-    const phases = JSON.parse(JSON.stringify(mockPhases));
+    const phases: Phase[] = JSON.parse(JSON.stringify(mockPhases));
+    // Built-in HU15 drills appear in their matching phase for every coach.
+    // Existing Firestore/custom drills and saved exercise IDs remain unchanged.
+    for (const phase of phases) {
+      phase.exercises.push(...(hu15ExercisesByPhase[phase.id] || []));
+    }
     if (custom.length > 0) {
         phases.push({
             id: 9,
