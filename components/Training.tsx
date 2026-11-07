@@ -28,8 +28,14 @@ const getVideoId = (url: string) => {
 import { Exercise, Player, Evaluation, Phase, TrainingSession, PlannedSession, WarmupExercise } from '../types';
 import { mockWarmupExercises } from '../services/mockData';
 import { WarmupLibrary } from './WarmupLibrary';
+import { Plan } from './Plan';
 
 type TrainingStep = 'selection' | 'planning' | 'checkin' | 'live';
+type TrainingTab = 'upcoming' | 'sessions' | 'active' | 'warmup' | 'plan';
+
+interface TrainingProps {
+  initialTab?: TrainingTab;
+}
 
 interface PlaylistItem {
   id: string;
@@ -71,8 +77,8 @@ const FYS_CRITERIA = [
   { label: 'Vilja', icon: ArrowUpCircle, desc: 'Mental inställning' }
 ];
 
-export const Training: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'upcoming' | 'sessions' | 'active'>('upcoming');
+export const Training: React.FC<TrainingProps> = ({ initialTab = 'upcoming' }) => {
+  const [activeTab, setActiveTab] = useState<TrainingTab>(initialTab);
   const [step, setStep] = useState<TrainingStep>('selection');
   const [phases, setPhases] = useState<Phase[]>([]);
   const [selectedPhase, setSelectedPhase] = useState<Phase | null>(null);
@@ -507,30 +513,57 @@ export const Training: React.FC = () => {
         </div>
       )}
 
-      <div className="flex gap-1 p-1 bg-slate-900 rounded-2xl w-full sm:w-fit border border-slate-800 shadow-xl">
-          <button 
-            onClick={() => { 
-              setActiveTab('active'); 
-              setEditingPlannedSessionId(null);
-              setActivePlannedSessionId(null);
-            }} 
-            className={`flex-1 sm:px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeTab === 'active' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-          >
-            <Plus size={13} /> Planera nytt pass
-          </button>
-          <button 
-            onClick={() => { setActiveTab('upcoming'); setSelectedSession(null); }} 
-            className={`flex-1 sm:px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeTab === 'upcoming' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-          >
-            <Calendar size={13} /> Kommande ({plannedSessions.length})
-          </button>
-          <button 
-            onClick={() => { setActiveTab('sessions'); }} 
-            className={`flex-1 sm:px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeTab === 'sessions' ? 'bg-slate-800 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-          >
-            <Clock size={13} /> Historik ({allSessions.length})
-          </button>
-      </div>
+      {/* All training resources in one view. Mobile: 3 + 2 buttons; desktop: one row. */}
+      <nav aria-label="Träningsvyer" className="grid w-full grid-cols-3 gap-2 rounded-2xl border border-slate-800 bg-slate-900 p-2 shadow-xl sm:grid-cols-5">
+        <button
+          type="button"
+          aria-pressed={activeTab === 'active'}
+          onClick={() => {
+            setActiveTab('active');
+            setEditingPlannedSessionId(null);
+            setActivePlannedSessionId(null);
+          }}
+          className={`flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-[10px] font-black uppercase tracking-wide transition-colors sm:flex-row ${activeTab === 'active' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+        >
+          <Plus size={16} className="shrink-0" /> Nytt pass
+        </button>
+        <button
+          type="button"
+          aria-pressed={activeTab === 'upcoming'}
+          onClick={() => { setActiveTab('upcoming'); setSelectedSession(null); }}
+          className={`flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-[10px] font-black uppercase tracking-wide transition-colors sm:flex-row ${activeTab === 'upcoming' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+        >
+          <Calendar size={16} className="shrink-0" /> Kommande <span className="hidden lg:inline">({plannedSessions.length})</span>
+        </button>
+        <button
+          type="button"
+          aria-pressed={activeTab === 'sessions'}
+          onClick={() => setActiveTab('sessions')}
+          className={`flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-[10px] font-black uppercase tracking-wide transition-colors sm:flex-row ${activeTab === 'sessions' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+        >
+          <Clock size={16} className="shrink-0" /> Historik <span className="hidden lg:inline">({allSessions.length})</span>
+        </button>
+        <button
+          type="button"
+          aria-pressed={activeTab === 'warmup'}
+          onClick={() => setActiveTab('warmup')}
+          className={`flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-[10px] font-black uppercase tracking-wide transition-colors sm:flex-row ${activeTab === 'warmup' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+        >
+          <Flame size={16} className="shrink-0" /> Uppvärmning
+        </button>
+        <button
+          type="button"
+          aria-pressed={activeTab === 'plan'}
+          onClick={() => setActiveTab('plan')}
+          className={`flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-[10px] font-black uppercase tracking-wide transition-colors sm:flex-row ${activeTab === 'plan' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+        >
+          <Layout size={16} className="shrink-0" /> Planering
+        </button>
+      </nav>
+
+      {/* Same exercise libraries, data sources and saving logic as the original views. */}
+      {activeTab === 'warmup' && <WarmupLibrary />}
+      {activeTab === 'plan' && <Plan />}
 
       {/* 1. FLIK: KOMMANDE PLANERADE PASS */}
       {activeTab === 'upcoming' && (
@@ -750,7 +783,7 @@ export const Training: React.FC = () => {
                   </div>
               )}
           </div>
-      ) : (
+      ) : activeTab === 'active' ? (
           <div className="space-y-6">
               {step === 'selection' && (
                   <div className="p-4 sm:p-8 md:p-12 rounded-3xl md:rounded-[3rem] bg-slate-900 border border-slate-800 space-y-6 sm:space-y-10 shadow-2xl animate-in slide-in-from-bottom relative overflow-hidden">
@@ -1513,7 +1546,7 @@ export const Training: React.FC = () => {
                   </div>
               )}
           </div>
-      )}
+      ) : null}
 
       {showAddExerciseModal && (
           <div className="fixed inset-0 z-[700] flex items-center justify-center p-4 bg-slate-950/95 backdrop-blur-md">
