@@ -4,14 +4,14 @@ import { GoogleGenAI, Type } from '@google/genai';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
-import { mockPhases, mockWarmupExercises } from './services/mockData';
+import { mockPhases, mockWarmupExercises } from './services/mockData.js';
 import { 
   serverDb, 
   cleanFirestoreData, 
   resolveAuthenticatedCoach, 
   sanitizePlayerForApi,
   queryUserCollectionViaRest 
-} from './services/firestoreDb';
+} from './services/firestoreDb.js';
 import { 
   collection, 
   getDocs, 
