@@ -4,7 +4,6 @@ import { View } from '../types';
 import { 
   LayoutDashboard, 
   Users, 
-  CalendarDays, 
   ClipboardCheck,
   Trophy,
   MonitorPlay,
@@ -13,7 +12,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Menu,
-  Flame,
   MessageSquare
 } from 'lucide-react';
 // Fix: Added @ts-ignore to bypass environment-specific resolution issues with Firebase exports
@@ -34,9 +32,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onNavigate, user }
     { id: View.DASHBOARD, label: 'Hem', icon: LayoutDashboard },
     { id: View.ROSTER, label: 'Laget', icon: Users },
     { id: View.CHAT, label: 'Chat', icon: MessageSquare, isNew: true },
-    { id: View.PLAN, label: 'Planering', icon: CalendarDays },
     { id: View.TRAINING, label: 'Träna', icon: ClipboardCheck },
-    { id: View.WARMUP_LIBRARY, label: 'Uppvärmning', icon: Flame },
     { id: View.MATCH_EVAL, label: 'Match', icon: Trophy },
     { id: View.TOOLS, label: 'Verktyg', icon: Wrench },
   ];
@@ -132,11 +128,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onNavigate, user }
       {/* Mobile Bottom Navigation */}
       <nav className="md:hidden fixed bottom-4 left-4 right-4 bg-slate-900/95 backdrop-blur-xl border border-white/10 h-16 rounded-2xl flex items-center z-50 shadow-2xl px-1 overflow-hidden">
         <div className="flex items-center justify-between w-full h-full px-2">
-          {menuItems.filter(item => 
-            item.id !== View.PLAN && 
-            item.id !== View.WARMUP_LIBRARY && 
-            item.id !== View.TOOLS
-          ).map((item) => (
+          {menuItems.filter(item => item.id !== View.TOOLS).map((item) => (
             <button
               key={item.id}
               onClick={() => onNavigate(item.id)}
@@ -151,7 +143,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onNavigate, user }
            <button
               onClick={() => onNavigate(View.TOOLS)}
               className={`flex flex-col items-center justify-center gap-1 transition-all relative w-12 h-12 rounded-xl ${
-                activeView === View.TOOLS || activeView === View.AI_COACH || activeView === View.WARMUP_LIBRARY ? 'text-orange-500 bg-white/5' : 'text-slate-500 hover:text-slate-300'
+                activeView === View.TOOLS || activeView === View.AI_COACH ? 'text-orange-500 bg-white/5' : 'text-slate-500 hover:text-slate-300'
               }`}
             >
               <Wrench className="w-5 h-5" strokeWidth={activeView === View.TOOLS ? 2.5 : 2} />
