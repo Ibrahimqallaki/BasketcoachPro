@@ -42,13 +42,15 @@ export const chatService = {
     text: string,
     coachId: string
   ): Promise<void> => {
-    if (playerSession.active()) {
+    if (playerSession.active() && senderRole === 'player') {
       await playerSession.request('messages', { text });
       return;
     }
     if (!isFirebaseConfigured || !db) {
-      console.warn("Firebase not configured, cannot send message.");
-      return;
+      throw new Error('Chatten är inte tillgänglig. Logga in som coach och försök igen.');
+    }
+    if (senderRole === 'coach' && auth.currentUser?.uid !== coachId) {
+      throw new Error('Din coachinloggning behöver förnyas. Logga in igen.');
     }
 
     try {
@@ -105,8 +107,7 @@ export const chatService = {
 
       const q = query(
         messagesRef,
-        where('conversationId', 'in', conversationIds),
-        limit(200)
+        where('conversationId', 'in', conversationIds)
       );
 
       return onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
@@ -125,7 +126,9 @@ export const chatService = {
           new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
         );
 
-        callback(sortedMessages);
+        // Limit after sorting: a server limit without ordering can hide newly sent
+        // messages in an older conversation. This also avoids a new composite index.
+        callback(sortedMessages.slice(-200));
       });
     } catch (error) {
       console.error("Error subscribing to messages:", error);

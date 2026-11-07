@@ -1,5 +1,13 @@
 # Spelarportal: reparation och testprotokoll
 
+## Kompletterande rättningar 7 november 2026
+
+- Fast testadress: `https://basketcoach-pro-test.vercel.app`. Den ska kopplas till den senaste godkända previewn efter uppdatering; byt inte länken till användaren.
+- Anonym Firebase-inloggning var avstängd. Den har nu aktiverats efter användarens uttryckliga godkännande. Ett riktigt test med den angivna spelarkoden kom därefter vidare till servern, som visar att serverbehörigheten ännu saknas. Det är inte verifierat att koden matchar en spelare.
+- Lagchatten begränsade Firestore-resultatet till 200 dokument innan de sorterades på tid. Nya meddelanden kunde därför falla utanför resultatet i en äldre konversation. Begränsningen sker nu efter tidsortering i klienten, utan nytt databasindex. Det innebär att konversationens historik hämtas innan de senaste 200 visas. Misslyckat skickande behåller nu texten, visar ett fel och kan inte dubbelklickas under pågående skickande. Inga testmeddelanden har skickats till riktiga spelare, och detta är inte ett bevis för att användarens rapporterade fel enbart berodde på 200-gränsen.
+- Användaren vill redigera kostråd/måltider. I granskad main/historik hittades ingen sådan coachredigerare; kostfliken hade fasta råd och lokala kryss. Ett valfritt `nutritionAdvice`-fält kan nu redigeras under Laget → Redigera och visas för just den spelaren under Kost. Kryssen och befintliga råd behålls. Skrivningen använder coachens befintliga players-dokument och owner-behörighet.
+- Scoreboardens kod, data och regler lämnas orörda. Ingen merge eller production deployment ingår.
+
 ## Omfattning
 
 Utgångspunkt: main `ee5060a611f35f7c5c1bfcf73fc90a89ce92bb3e`, Vercel-projekt `basketcoach-pro` i `ibrahims-projects-014d1d1f`.

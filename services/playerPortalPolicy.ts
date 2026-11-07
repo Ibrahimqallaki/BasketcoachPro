@@ -19,7 +19,7 @@ export function readSession(token: string, secret: string): any {
 }
 // Explicit projections prevent new coach-only fields from leaking into the portal.
 export function portalPlayer(p: any, id: string) {
-  const fields = ['name', 'number', 'avatar', 'position', 'age', 'level', 'skillAssessment', 'individualPlan', 'homework', 'nutrition', 'aiFeedback', 'suggestedDrills', 'created_at'];
+  const fields = ['name', 'number', 'avatar', 'position', 'age', 'level', 'skillAssessment', 'individualPlan', 'homework', 'nutrition', 'nutritionAdvice', 'aiFeedback', 'suggestedDrills', 'created_at'];
   return Object.fromEntries([['id', id], ...fields.filter(k => p[k] !== undefined).map(k => [k, p[k]])]);
 }
 export function portalMatch(m: any, id: string, playerId: string) {

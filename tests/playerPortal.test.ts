@@ -14,7 +14,7 @@ const playerPath = 'users/coach/players/me';
 // A deliberately isolated Firestore double: no credentials, network calls or real data.
 function fixture() {
   const records = new Map<string, any>([
-    [playerPath, { name: 'Player', number: 7, accessCode: 'P-7-ABCD', notes: 'Coach private', homework: [{ id: 'hw', title: 'Shoot', completed: false }] }],
+    [playerPath, { name: 'Player', number: 7, accessCode: 'P-7-ABCD', notes: 'Coach private', nutritionAdvice: 'Coach-authored meal notes', homework: [{ id: 'hw', title: 'Shoot', completed: false }] }],
     ['users/coach/players/other', { name: 'Other', accessCode: 'P-8-WXYZ', notes: 'Private' }],
     ['users/coach/matches/m1', { date: '2026-11-01', opponent: 'Team', score: 10, opponentScore: 8, privateExtra: 'Private', playerPoints: { me: 4, other: 6 }, feedbacks: [{ playerId: 'me', strengths: 'Good' }, { playerId: 'other', strengths: 'Private' }] }],
     ['users/coach/sessions/s1', { date: '2026-11-01', phaseId: 1, exerciseIds: ['e'], attendance: [{ playerId: 'me' }, { playerId: 'other' }], evaluations: [{ playerId: 'me' }, { playerId: 'other' }] }],
@@ -83,6 +83,7 @@ test('valid existing code logs in; dashboard projects only own private data', as
   assert.equal(login.data.player.notes, undefined);
   const response = await f.request('dashboard');
   assert.equal(response.status, 200);
+  assert.equal(response.data.player.nutritionAdvice, 'Coach-authored meal notes');
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.deepEqual(response.data.matches[0].feedbacks, [{ playerId: 'me', strengths: 'Good' }]);
   assert.equal(response.data.matches[0].playerPoints, undefined);

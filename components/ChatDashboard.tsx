@@ -31,6 +31,8 @@ export const ChatDashboard: React.FC<ChatDashboardProps> = ({ coachId }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [allMessages, setAllMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState('');
   const [searchQuery, setSearchQuery] = useState("");
   const [isMobileListOpen, setIsMobileListOpen] = useState(true);
   
@@ -103,10 +105,11 @@ export const ChatDashboard: React.FC<ChatDashboardProps> = ({ coachId }) => {
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!inputText.trim()) return;
+    if (!inputText.trim() || sending) return;
 
     const text = inputText;
-    setInputText("");
+    setSending(true);
+    setSendError('');
 
     try {
       await chatService.sendMessage(
@@ -117,9 +120,11 @@ export const ChatDashboard: React.FC<ChatDashboardProps> = ({ coachId }) => {
         text,
         coachId
       );
+      setInputText('');
     } catch (error) {
+      setSendError('Meddelandet kunde inte skickas. Texten finns kvar. Kontrollera din inloggning och försök igen.');
       console.error("Failed to send message", error);
-    }
+    } finally { setSending(false); }
   };
 
   const getUnreadCount = (recipientId: string) => {
@@ -307,6 +312,7 @@ export const ChatDashboard: React.FC<ChatDashboardProps> = ({ coachId }) => {
                 type="text" 
                 placeholder={selectedRecipientId === 'TEAM' ? "Skriv till laget..." : `Skriv till ${selectedPlayer?.name.split(' ')[0]}...`}
                 value={inputText}
+                disabled={sending}
                 onChange={(e) => setInputText(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl md:rounded-2xl py-3 md:py-4 pl-4 md:pl-6 pr-10 md:pr-12 text-xs md:text-sm text-white focus:border-blue-500 outline-none transition-all shadow-inner"
               />
@@ -316,12 +322,13 @@ export const ChatDashboard: React.FC<ChatDashboardProps> = ({ coachId }) => {
             </div>
             <button 
               type="submit"
-              disabled={!inputText.trim()}
+              disabled={!inputText.trim() || sending}
               className="w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl bg-blue-600 text-white flex items-center justify-center hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 transition-all shadow-lg shadow-blue-900/20 active:scale-95"
             >
               <Send className="w-4.5 h-4.5 md:w-6 md:h-6" />
             </button>
           </form>
+          {sendError && <p role="alert" className="mt-3 text-xs text-rose-400">{sendError}</p>}
           <div className="mt-3 md:mt-4 flex items-center justify-center gap-3 md:gap-4">
              <div className="flex items-center gap-1 text-[7px] md:text-[8px] font-black text-slate-600 uppercase tracking-widest">
                <ShieldCheck className="w-2 h-2 md:w-2.5 md:h-2.5 text-emerald-500" /> Krypterat

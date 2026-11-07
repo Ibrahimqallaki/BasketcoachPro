@@ -111,6 +111,7 @@ export interface Player {
   accessCode?: string; 
   homework?: Homework[]; 
   nutrition?: NutritionLog; 
+  nutritionAdvice?: string;
   aiFeedback?: string;
   suggestedDrills?: string[];
   created_at?: string;

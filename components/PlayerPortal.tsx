@@ -824,6 +824,12 @@ export const PlayerPortal: React.FC<PlayerPortalProps> = ({
                 OPTIMERA DIN ÅTERHÄMTNING
               </p>
             </div>
+            {myPlayer.nutritionAdvice && (
+              <div className="p-6 rounded-[2rem] bg-slate-900 border border-emerald-500/20 space-y-3">
+                <h3 className="text-xs font-black uppercase text-emerald-400">Kostråd från coachen</h3>
+                <p className="text-sm text-slate-200 whitespace-pre-wrap">{myPlayer.nutritionAdvice}</p>
+              </div>
+            )}
             <div className="space-y-3">
               {[
                 {
