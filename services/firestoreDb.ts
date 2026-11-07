@@ -3,7 +3,7 @@ import {
   getFirestore, 
   type Firestore
 } from 'firebase/firestore';
-import appletConfig from '../firebase-applet-config.json';
+import appletConfig from '../firebase-applet-config.json' with { type: 'json' };
 import type express from 'express';
 
 // A static JSON import allows Vercel to bundle the Firebase web configuration.
