@@ -100,6 +100,7 @@ export const chatService = {
           return {
             id: d.id,
             ...data,
+            pending: d.metadata.hasPendingWrites,
             readBy: Array.isArray(data.readBy) ? data.readBy : [],
             timestamp: timestamp.toISOString()
           } as ChatMessage;
@@ -134,7 +135,9 @@ export const chatService = {
 
     try {
       const messagesRef = collection(db, `users/${coachId}/messages`);
-      const q = query(messagesRef, orderBy('timestamp', 'desc'), limit(500));
+      // Read receipts for the latest team message must survive even when there
+      // are more than 500 newer direct messages in other conversations.
+      const q = query(messagesRef, orderBy('timestamp', 'desc'));
       
       return onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
         const messages = snapshot.docs.map(d => {
@@ -143,6 +146,7 @@ export const chatService = {
           return {
             id: d.id,
             ...data,
+            pending: d.metadata.hasPendingWrites,
             readBy: Array.isArray(data.readBy) ? data.readBy : [],
             timestamp: timestamp.toISOString()
           } as ChatMessage;

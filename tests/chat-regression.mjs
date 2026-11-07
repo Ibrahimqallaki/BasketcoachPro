@@ -38,7 +38,7 @@ function emit(listener) {
   let selected = records.filter(record => listener.q.constraints.every(c => c.kind !== 'where' || c.values.includes(record[c.field])));
   for (const c of listener.q.constraints) if (c.kind === 'limit') selected = selected.slice(0, c.count);
   // Reverse document arrival to ensure the service actually sorts by timestamp.
-  listener.next({ docs: [...selected].reverse().map(record => ({ id: record.id, data: () => record })) });
+  listener.next({ docs: [...selected].reverse().map(record => ({ id: record.id, metadata: {hasPendingWrites: Boolean(record.pending)}, data: () => record })) });
 }
 globalThis.__chatAdapter = {
   subscribe(q,next,error) { assert.equal(q.ref.path, 'users/coach/messages'); const l = { q,next,error }; listeners.add(l); emit(l); return () => listeners.delete(l); },
@@ -84,4 +84,44 @@ try {
   failWrite = true;
   await assert.rejects(chatService.sendMessage('coach','Coach','coach','TEAM','denied','coach'));
 } finally { console.error = originalError; delete globalThis.__chatAdapter; }
-console.log('PASS: >200 messages, realtime arrival, team/private separation, legacy data, async read errors, send routing and write failure. No real Firebase writes.');
+const summaryOutput = await build({ entryPoints: ['services/chatStatus.ts'], bundle: true, write: false, platform: 'node', format: 'esm' });
+const { getPlayerChatSummary } = await import(`data:text/javascript;base64,${Buffer.from(summaryOutput.outputFiles[0].text).toString('base64')}`);
+const statusRecords = [
+  { id:'team-old', senderRole:'coach', recipientId:'TEAM', timestamp:'2026-11-07T10:00:00.000Z', readBy:['coach','playerA'] },
+  { id:'team-new', senderRole:'coach', recipientId:'TEAM', timestamp:'2026-11-07T11:00:00.000Z', readBy:['coach'] },
+  { id:'direct-a', senderRole:'coach', recipientId:'playerA', timestamp:'2026-11-07T12:00:00.000Z', readBy:['coach','playerA'] },
+  { id:'reply-unread', senderRole:'player', senderId:'playerA', recipientId:'coach', timestamp:'2026-11-07T13:00:00.000Z', readBy:['playerA'] },
+  { id:'reply-read', senderRole:'player', senderId:'playerA', recipientId:'coach', timestamp:'2026-11-07T13:01:00.000Z', readBy:['playerA','coach'] },
+  { id:'reply-other', senderRole:'player', senderId:'playerB', recipientId:'coach', timestamp:'2026-11-07T13:02:00.000Z', readBy:['playerB'] },
+];
+let summary = getPlayerChatSummary(statusRecords,'playerA','coach');
+assert.equal(summary.latestTeam.id,'team-new', 'Status must follow the newest team message, not an older read message');
+assert.equal(summary.teamState,'unread');
+assert.equal(summary.directState,'read');
+assert.equal(summary.unreadReplies,1, 'Other players and already read replies must not increase this player badge');
+statusRecords[1].readBy.push('playerA');
+statusRecords[3].readBy.push('coach');
+summary = getPlayerChatSummary(statusRecords,'playerA','coach');
+assert.equal(summary.teamState,'read', 'Read receipt must change the displayed status');
+assert.equal(summary.unreadReplies,0, 'Opening the reply must clear its unread badge');
+assert.equal(getPlayerChatSummary(statusRecords,'playerB','coach').teamState,'unread', 'Another player must remain unread');
+statusRecords[1].pending = true;
+assert.equal(getPlayerChatSummary(statusRecords,'playerA','coach').teamState,'pending', 'Local pending writes must not claim sent/read');
+assert.equal(getPlayerChatSummary([],'playerA','coach').teamState,'none');
+
+// An older team receipt must survive 600 newer, unrelated private messages.
+const overviewRecords = [...statusRecords, ...Array.from({length:600}, (_, i) => ({
+  id:`other-dm-${i}`, senderRole:'coach', recipientId:'playerB',
+  timestamp:new Date(Date.parse('2026-11-08T10:00:00.000Z') + i * 1000).toISOString(), readBy:['coach'],
+}))].sort((a,b) => b.timestamp.localeCompare(a.timestamp));
+let overviewSummary;
+globalThis.__chatAdapter = { subscribe(q,next) {
+  let data = overviewRecords;
+  for (const c of q.constraints) if (c.kind === 'limit') data = data.slice(0,c.count);
+  next({docs:data.map(record => ({id:record.id, metadata:{hasPendingWrites:false}, data:() => ({...record,timestamp:{toDate:() => new Date(record.timestamp)}})}))});
+  return () => {};
+} };
+chatService.subscribeToAllMessages('coach', data => { overviewSummary = getPlayerChatSummary(data,'playerA','coach'); })();
+assert.equal(overviewSummary.latestTeam?.id,'team-new', 'Other recent conversations must not erase the latest team receipt');
+delete globalThis.__chatAdapter;
+console.log('PASS: history/realtime, team/private separation, async errors, send routing, per-player latest read status, unread reply counts, receipt updates and pending writes. No real Firebase writes.');
