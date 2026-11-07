@@ -1,4 +1,5 @@
 import express from 'express';
+import { requireGeminiAuth } from './services/verifyGeminiAuth.js';
 // Vite is imported only by the local development server; never load Rollup in Vercel Functions.
 import { GoogleGenAI, Type } from '@google/genai';
 import path from 'path';
@@ -50,6 +51,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 // Return an actionable error instead of attempting Gemini with no API key.
+app.use('/api/gemini', requireGeminiAuth);
 app.use('/api/gemini', (_req, res, next) => {
   if (!geminiKey) {
     res.status(503).json({ error: 'Gemini API-nyckel saknas. Lägg till GEMINI_API_KEY för Preview i Vercel.' });
