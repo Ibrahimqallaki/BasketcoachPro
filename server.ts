@@ -33,13 +33,29 @@ const PORT = Number(process.env.PORT) || 3000;
 app.use(express.json({ limit: '50mb' }));
 
 // Server-side Gemini client with telemetry header
+// Keep the Gemini key on the server; do not expose it to the browser.
+const geminiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
 const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY || process.env.API_KEY,
+  apiKey: geminiKey || 'gemini-key-not-configured',
   httpOptions: {
     headers: {
       'User-Agent': 'aistudio-build',
     },
   },
+});
+
+// Status check lets us verify the API route without making billable AI calls.
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok', geminiConfigured: Boolean(geminiKey) });
+});
+
+// Return an actionable error instead of attempting Gemini with no API key.
+app.use('/api/gemini', (_req, res, next) => {
+  if (!geminiKey) {
+    res.status(503).json({ error: 'Gemini API-nyckel saknas. Lägg till GEMINI_API_KEY för Preview i Vercel.' });
+    return;
+  }
+  next();
 });
 
 // Helper for model selection
@@ -1071,7 +1087,13 @@ async function startServer() {
   });
 }
 
-startServer().catch((err) => {
-  console.error('Server failed to start:', err);
-  process.exit(1);
-});
+// Vercel imports the Express app as a serverless function, not a listening server.
+// Locally the existing Express + Vite development workflow is unchanged.
+if (!process.env.VERCEL) {
+  startServer().catch((err) => {
+    console.error('Server failed to start:', err);
+    process.exit(1);
+  });
+}
+
+export default app;
