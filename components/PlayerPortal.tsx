@@ -10,6 +10,8 @@ import {
   Homework,
 } from "../types";
 import { dataService } from "../services/dataService";
+import { playerSession } from '../services/playerSession';
+import { mockPhases } from '../services/mockData';
 import {
   Trophy,
   Target,
@@ -275,8 +277,9 @@ export const PlayerPortal: React.FC<PlayerPortalProps> = ({
         suggestedDrills: result.suggestedDrills,
       };
 
-      setMyPlayer(updatedPlayer);
-      await dataService.updatePlayer(
+      if (playerSession.active()) {
+        await playerSession.request('feedback', { aiFeedback: result.feedback, suggestedDrills: result.suggestedDrills });
+      } else await dataService.updatePlayer(
         updatedPlayer.id,
         {
           aiFeedback: result.feedback,
@@ -284,6 +287,7 @@ export const PlayerPortal: React.FC<PlayerPortalProps> = ({
         },
         coachId,
       );
+      setMyPlayer(updatedPlayer);
     } catch (err) {
       console.error("Failed to analyze performance", err);
     } finally {
@@ -293,7 +297,7 @@ export const PlayerPortal: React.FC<PlayerPortalProps> = ({
 
   useEffect(() => {
     if (!coachId) return;
-    const unsubscribe = chatService.subscribeToAllMessages(coachId, (messages) => {
+    const unsubscribe = chatService.subscribeToMessages(coachId, player.id, ['TEAM', coachId], (messages) => {
       const unread = messages.filter(msg => {
         const isRelevant = msg.recipientId === 'TEAM' || msg.recipientId === player.id;
         return isRelevant && msg.senderRole === 'coach' && !msg.readBy.includes(player.id);
@@ -304,26 +308,43 @@ export const PlayerPortal: React.FC<PlayerPortalProps> = ({
   }, [coachId, player.id]);
 
   useEffect(() => {
+    let cancelled = false;
     const loadData = async () => {
       setLoading(true);
-      const [allMatches, allSessions, phases, currentPlayers] =
-        await Promise.all([
-          dataService.getMatches(coachId),
-          dataService.getSessions(coachId),
-          dataService.getUnifiedPhases(coachId),
-          dataService.getPlayers(coachId),
-        ]);
-      const updatedMe = currentPlayers.find((p) => p.id === player.id);
-      if (updatedMe) setMyPlayer(updatedMe);
-      const myMatches = allMatches.filter((m) =>
-        m.feedbacks.some((f) => f.playerId === player.id),
-      );
-      setMatches(myMatches);
-      setSessions(allSessions);
-      setAllExercises(phases.flatMap((p) => p.exercises));
-      setLoading(false);
+      try {
+        if (playerSession.active()) {
+          const data = await playerSession.request('dashboard');
+          if (cancelled) return;
+          setMyPlayer(data.player);
+          setMatches(data.matches);
+          setSessions(data.sessions);
+          setAllExercises([...mockPhases.flatMap(p => p.exercises), ...data.exercises]);
+          return;
+        }
+        const [allMatches, allSessions, phases, currentPlayers] =
+          await Promise.all([
+            dataService.getMatches(coachId),
+            dataService.getSessions(coachId),
+            dataService.getUnifiedPhases(coachId),
+            dataService.getPlayers(coachId),
+          ]);
+        const updatedMe = currentPlayers.find((p) => p.id === player.id);
+        if (updatedMe) setMyPlayer(updatedMe);
+        const myMatches = allMatches.filter((m) =>
+          m.feedbacks.some((f) => f.playerId === player.id),
+        );
+        setMatches(myMatches);
+        setSessions(allSessions);
+        setAllExercises(phases.flatMap((p) => p.exercises));
+      } catch (error) {
+        if (!cancelled) {
+          alert(error instanceof Error ? error.message : 'Kunde inte hämta spelarens data.');
+          onLogout();
+        }
+      } finally { if (!cancelled) setLoading(false); }
     };
     loadData();
+    return () => { cancelled = true; };
   }, [player.id, activeTab, coachId]);
 
   useEffect(() => {
@@ -387,8 +408,13 @@ export const PlayerPortal: React.FC<PlayerPortalProps> = ({
     }
 
     try {
-      await dataService.toggleHomework(myPlayer.id, homeworkId, coachId);
+      if (playerSession.active()) {
+        await playerSession.request('homework', { homeworkId, completed: Boolean(isCompleting) });
+      } else await dataService.toggleHomework(myPlayer.id, homeworkId, coachId);
     } catch (err) {
+      setMyPlayer(prev => ({ ...prev, homework: myPlayer.homework }));
+      setShowQuestComplete(false);
+      alert('Uppdraget kunde inte sparas. Försök igen.');
       console.error("Failed to toggle homework", err);
     }
   };
@@ -798,6 +824,12 @@ export const PlayerPortal: React.FC<PlayerPortalProps> = ({
                 OPTIMERA DIN ÅTERHÄMTNING
               </p>
             </div>
+            {myPlayer.nutritionAdvice && (
+              <div className="p-6 rounded-[2rem] bg-slate-900 border border-emerald-500/20 space-y-3">
+                <h3 className="text-xs font-black uppercase text-emerald-400">Kostråd från coachen</h3>
+                <p className="text-sm text-slate-200 whitespace-pre-wrap">{myPlayer.nutritionAdvice}</p>
+              </div>
+            )}
             <div className="space-y-3">
               {[
                 {

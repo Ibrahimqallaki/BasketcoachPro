@@ -77,7 +77,9 @@ export const Roster: React.FC<RosterProps> = ({ onSimulatePlayerLogin }) => {
   const [copySuccess, setCopySuccess] = useState(false);
   const [isGeneratingCode, setIsGeneratingCode] = useState(false);
   const [codeSyncStatus, setCodeSyncStatus] = useState<'idle' | 'saving' | 'synced' | 'error'>('idle');
-  const [formData, setFormData] = useState({ name: '', number: '', position: 'Point Guard (1)', age: '13', notes: '' });
+  const [formData, setFormData] = useState({ name: '', number: '', position: 'Point Guard (1)', age: '13', notes: '', nutritionAdvice: '' });
+
+  const [saveError, setSaveError] = useState('');
 
   const loadData = async () => {
     setLoading(true);
@@ -180,6 +182,7 @@ export const Roster: React.FC<RosterProps> = ({ onSimulatePlayerLogin }) => {
 
   const handleSavePlayer = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaveError('');
     setLoading(true);
     try {
       if (modalState.mode === 'add') {
@@ -189,6 +192,7 @@ export const Roster: React.FC<RosterProps> = ({ onSimulatePlayerLogin }) => {
           position: formData.position,
           age: parseInt(formData.age) || 13,
           notes: formData.notes,
+          nutritionAdvice: formData.nutritionAdvice.trim(),
           skillAssessment: { 'Skytte': 5, 'Dribbling': 5, 'Passning': 5, 'Försvar': 5, 'Spelförståelse': 5, 'Kondition': 5, 'Fysik': 5 },
           individualPlan: [],
           homework: [],
@@ -203,11 +207,14 @@ export const Roster: React.FC<RosterProps> = ({ onSimulatePlayerLogin }) => {
           number: parseInt(formData.number) || 0,
           position: formData.position,
           age: parseInt(formData.age) || 13,
-          notes: formData.notes
+          notes: formData.notes,
+          nutritionAdvice: formData.nutritionAdvice.trim()
         });
         setPlayers(updated);
       }
       setModalState({ show: false, mode: 'add' });
+    } catch (error) {
+      setSaveError('Spelaren kunde inte sparas. Dina ändringar finns kvar. Kontrollera inloggningen och försök igen.');
     } finally {
       setLoading(false);
     }
@@ -219,7 +226,7 @@ export const Roster: React.FC<RosterProps> = ({ onSimulatePlayerLogin }) => {
     <div className="max-w-6xl mx-auto space-y-6 pb-24">
       <div className="flex items-center justify-between px-1">
         <h3 className="text-xl md:text-3xl font-black italic uppercase tracking-tighter text-white">Laget</h3>
-        <button onClick={() => { setFormData({ name: '', number: '', position: 'Point Guard (1)', age: '13', notes: '' }); setModalState({ show: true, mode: 'add' }); }} className="px-6 py-3 bg-orange-600 rounded-xl text-[10px] font-black uppercase text-white shadow-lg flex items-center gap-2 hover:bg-orange-500 transition-all"><Plus size={16} /> Lägg till Spelare</button>
+        <button onClick={() => { setFormData({ name: '', number: '', position: 'Point Guard (1)', age: '13', notes: '', nutritionAdvice: '' }); setModalState({ show: true, mode: 'add' }); }} className="px-6 py-3 bg-orange-600 rounded-xl text-[10px] font-black uppercase text-white shadow-lg flex items-center gap-2 hover:bg-orange-500 transition-all"><Plus size={16} /> Lägg till Spelare</button>
       </div>
 
       <div className="grid lg:grid-cols-12 gap-6">
@@ -250,7 +257,7 @@ export const Roster: React.FC<RosterProps> = ({ onSimulatePlayerLogin }) => {
                    </div>
                    <div className="flex gap-2 w-full md:w-auto">
                       {player.accessCode && onSimulatePlayerLogin && <button onClick={() => onSimulatePlayerLogin(player)} className="flex-1 md:flex-none p-3 bg-blue-600/10 text-blue-400 border border-blue-500/20 rounded-xl hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center" title="Visa som spelare"><Eye size={18}/></button>}
-                      <button onClick={() => { setFormData({ name: player.name, number: player.number.toString(), position: player.position || 'Point Guard (1)', age: (player.age || 13).toString(), notes: player.notes || '' }); setModalState({ show: true, mode: 'edit', player }); }} className="flex-[2] md:flex-none px-6 py-2 rounded-xl bg-slate-800 text-slate-400 text-[9px] font-black uppercase flex items-center justify-center gap-2 hover:text-white transition-all shadow-lg"><PenTool size={14}/> Redigera</button>
+                      <button onClick={() => { setFormData({ name: player.name, number: player.number.toString(), position: player.position || 'Point Guard (1)', age: (player.age || 13).toString(), notes: player.notes || '', nutritionAdvice: player.nutritionAdvice || '' }); setModalState({ show: true, mode: 'edit', player }); }} className="flex-[2] md:flex-none px-6 py-2 rounded-xl bg-slate-800 text-slate-400 text-[9px] font-black uppercase flex items-center justify-center gap-2 hover:text-white transition-all shadow-lg"><PenTool size={14}/> Redigera</button>
                       <button onClick={() => handleDeletePlayer(player.id)} className="p-3 bg-rose-600/10 text-rose-500 border border-rose-500/20 rounded-xl hover:bg-rose-600 hover:text-white transition-all"><Trash2 size={18}/></button>
                    </div>
               </div>
@@ -363,7 +370,7 @@ export const Roster: React.FC<RosterProps> = ({ onSimulatePlayerLogin }) => {
       {/* Player Modal */}
       {modalState.show && (
         <div className="fixed inset-0 z-[800] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95">
+          <div className="w-full max-w-md max-h-[90dvh] overflow-y-auto bg-slate-900 border border-slate-800 rounded-[2.5rem] shadow-2xl animate-in zoom-in-95">
             <form onSubmit={handleSavePlayer}>
               <div className="p-8 border-b border-slate-800 flex justify-between items-center bg-slate-950/40">
                 <h3 className="text-2xl font-black text-white italic uppercase tracking-tighter">
@@ -408,7 +415,13 @@ export const Roster: React.FC<RosterProps> = ({ onSimulatePlayerLogin }) => {
               </div>
 
               <div className="p-8 bg-slate-950/60 border-t border-slate-800">
-                <button type="submit" className="w-full py-4 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-black uppercase text-[10px] tracking-widest shadow-xl shadow-orange-900/20 transition-all">
+                <div className="space-y-2">
+                  <label htmlFor="player-nutrition-advice" className="text-[10px] font-black uppercase text-slate-400">Kostråd och måltider</label>
+                  <textarea id="player-nutrition-advice" value={formData.nutritionAdvice} onChange={e => setFormData({...formData, nutritionAdvice: e.target.value})} maxLength={4000} placeholder="Skriv råd eller måltider för den här spelaren..." className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white text-sm focus:border-orange-500 outline-none h-28 resize-y" />
+                  <p className="text-xs text-slate-500">Visas för spelaren under Kost.</p>
+                </div>
+                {saveError && <p role="alert" className="text-xs text-rose-400">{saveError}</p>}
+                <button type="submit" disabled={loading} className="w-full py-4 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-black uppercase text-[10px] tracking-widest shadow-xl shadow-orange-900/20 transition-all">
                   Spara Spelare
                 </button>
               </div>

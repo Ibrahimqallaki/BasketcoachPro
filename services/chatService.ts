@@ -1,6 +1,7 @@
 
 import { ChatMessage, ChatConversation } from '../types';
 import { db, auth, isFirebaseConfigured } from './firebase';
+import { playerSession } from './playerSession';
 // @ts-ignore
 import { 
   collection, 
@@ -41,9 +42,15 @@ export const chatService = {
     text: string,
     coachId: string
   ): Promise<void> => {
-    if (!isFirebaseConfigured || !db) {
-      console.warn("Firebase not configured, cannot send message.");
+    if (playerSession.active() && senderRole === 'player') {
+      await playerSession.request('messages', { text });
       return;
+    }
+    if (!isFirebaseConfigured || !db) {
+      throw new Error('Chatten är inte tillgänglig. Logga in som coach och försök igen.');
+    }
+    if (senderRole === 'coach' && auth.currentUser?.uid !== coachId) {
+      throw new Error('Din coachinloggning behöver förnyas. Logga in igen.');
     }
 
     try {
@@ -75,6 +82,19 @@ export const chatService = {
     recipientIds: string | string[],
     callback: (messages: ChatMessage[]) => void
   ): (() => void) => {
+    if (playerSession.active()) {
+      let stopped = false;
+      let timer: ReturnType<typeof setTimeout>;
+      const poll = async () => {
+        try {
+          const messages = await playerSession.request('messages');
+          if (!stopped) callback(messages);
+        } catch (error) { console.warn('Spelarchatten kunde inte uppdateras.'); }
+        finally { if (!stopped) timer = setTimeout(poll, 10000); }
+      };
+      void poll();
+      return () => { stopped = true; clearTimeout(timer); };
+    }
     if (!isFirebaseConfigured || !db) return () => {};
 
     try {
@@ -87,8 +107,7 @@ export const chatService = {
 
       const q = query(
         messagesRef,
-        where('conversationId', 'in', conversationIds),
-        limit(200)
+        where('conversationId', 'in', conversationIds)
       );
 
       return onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
@@ -107,7 +126,9 @@ export const chatService = {
           new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
         );
 
-        callback(sortedMessages);
+        // Limit after sorting: a server limit without ordering can hide newly sent
+        // messages in an older conversation. This also avoids a new composite index.
+        callback(sortedMessages.slice(-200));
       });
     } catch (error) {
       console.error("Error subscribing to messages:", error);
@@ -150,6 +171,10 @@ export const chatService = {
    * Marks a message as read by the current user.
    */
   markAsRead: async (coachId: string, messageId: string, userId: string): Promise<void> => {
+    if (playerSession.active()) {
+      await playerSession.request('read', { messageId });
+      return;
+    }
     if (!isFirebaseConfigured || !db) return;
     try {
       const messageRef = doc(db, `users/${coachId}/messages`, messageId);

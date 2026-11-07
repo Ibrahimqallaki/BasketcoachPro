@@ -8,12 +8,14 @@
     "build": "tsc -b && vite build",
     "start": "tsx server.ts",
     "lint": "tsc -b",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:player-portal": "tsx --test tests/playerPortal.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.40.0",
     "express": "^5.3.0",
     "firebase": "^11.3.1",
+    "firebase-admin": "^14.5.0",
     "lucide-react": "^0.575.0",
     "motion": "^12.38.0",
     "react": "^19.0.0",

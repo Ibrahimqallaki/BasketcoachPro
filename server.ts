@@ -1,4 +1,5 @@
 import express from 'express';
+import { playerPortalApi } from './services/playerPortalApi.js';
 import { requireGeminiAuth } from './services/verifyGeminiAuth.js';
 // Vite is imported only by the local development server; never load Rollup in Vercel Functions.
 import { GoogleGenAI, Type } from '@google/genai';
@@ -31,6 +32,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
+app.use('/api/player', express.json({ limit: '16kb' }), playerPortalApi);
 app.use(express.json({ limit: '50mb' }));
 
 // Server-side Gemini client with telemetry header
