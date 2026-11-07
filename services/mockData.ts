@@ -1,5 +1,5 @@
 
-import { Player, Phase, Exercise, TrainingSession, WarmupExercise, WarmupPhase } from '../types';
+import { Player, Phase, Exercise, TrainingSession, WarmupExercise, WarmupPhase } from '../types.js';
 
 export const mockWarmupExercises: WarmupExercise[] = [
   {

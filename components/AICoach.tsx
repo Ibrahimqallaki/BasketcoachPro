@@ -1,3 +1,4 @@
+import { geminiFetch } from '../services/geminiFetch';
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, Loader2, Sparkles, AlertCircle, Trash2, Database, TrendingUp, Users, Trophy } from 'lucide-react';
@@ -158,7 +159,7 @@ export const AICoach: React.FC = () => {
 
     try {
       const contextString = generateContextString();
-      const res = await fetch('/api/gemini/chat', {
+      const res = await geminiFetch('/api/gemini/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

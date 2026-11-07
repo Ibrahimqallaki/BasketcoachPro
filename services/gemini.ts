@@ -1,6 +1,7 @@
+import { geminiFetch } from './geminiFetch';
 export const generateAppConcept = async (prompt: string): Promise<string> => {
   try {
-    const res = await fetch('/api/gemini/concept', {
+    const res = await geminiFetch('/api/gemini/concept', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt }),
@@ -16,7 +17,7 @@ export const generateAppConcept = async (prompt: string): Promise<string> => {
 
 export const parseMatchText = async (rawText: string): Promise<any> => {
   try {
-    const res = await fetch('/api/gemini/parse-match-text', {
+    const res = await geminiFetch('/api/gemini/parse-match-text', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rawText }),
@@ -31,7 +32,7 @@ export const parseMatchText = async (rawText: string): Promise<any> => {
 
 export const parseMatchScreenshot = async (base64Image: string): Promise<any> => {
   try {
-    const res = await fetch('/api/gemini/parse-match-image', {
+    const res = await geminiFetch('/api/gemini/parse-match-image', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ base64Image }),
@@ -46,7 +47,7 @@ export const parseMatchScreenshot = async (base64Image: string): Promise<any> =>
 
 export const generateImage = async (prompt: string): Promise<string | null> => {
   try {
-    const res = await fetch('/api/gemini/generate-image', {
+    const res = await geminiFetch('/api/gemini/generate-image', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt }),
@@ -72,7 +73,7 @@ export const analyzeGameFrame = async (
   playerFocus?: string
 ): Promise<string> => {
   try {
-    const res = await fetch('/api/gemini/analyze-frame', {
+    const res = await geminiFetch('/api/gemini/analyze-frame', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ base64Images, userInstruction, playerFocus }),

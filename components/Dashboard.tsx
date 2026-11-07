@@ -1,3 +1,4 @@
+import { geminiFetch } from '../services/geminiFetch';
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Target, Users, Activity, Star, Zap, ChevronRight, Calendar, Lightbulb, Trophy, Loader2, Dumbbell, TrendingUp, TrendingDown, Timer, Heart, BrainCircuit, ArrowUpRight, ArrowDownRight, Flame, Sparkles, AlertCircle, Play, Plus, Bot, CheckCircle2 } from 'lucide-react';
@@ -66,7 +67,7 @@ export const Dashboard: React.FC<{
       setIsFetchingInsight(true);
       try {
         const recentMatches = matches.slice(-2).map(m => `${m.score}-${m.opponentScore}`).join(', ');
-        const res = await fetch('/api/gemini/insight', {
+        const res = await geminiFetch('/api/gemini/insight', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

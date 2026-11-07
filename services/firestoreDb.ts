@@ -3,16 +3,11 @@ import {
   getFirestore, 
   type Firestore
 } from 'firebase/firestore';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import appletConfig from '../firebase-applet-config.json' with { type: 'json' };
 import type express from 'express';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const configPath = path.resolve(__dirname, '../firebase-applet-config.json');
-export const appletConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+// A static JSON import allows Vercel to bundle the Firebase web configuration.
+export { appletConfig };
 
 const app = getApps().length === 0 ? initializeApp(appletConfig) : getApps()[0];
 export const serverDb: Firestore = appletConfig.firestoreDatabaseId 

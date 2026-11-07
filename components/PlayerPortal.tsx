@@ -1,3 +1,4 @@
+import { geminiFetch } from '../services/geminiFetch';
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Player,
@@ -246,7 +247,7 @@ export const PlayerPortal: React.FC<PlayerPortalProps> = ({
   const handleAnalyzePerformance = async () => {
     setIsAnalyzingPerformance(true);
     try {
-      const res = await fetch('/api/gemini/player-feedback', {
+      const res = await geminiFetch('/api/gemini/player-feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -400,7 +401,7 @@ export const PlayerPortal: React.FC<PlayerPortalProps> = ({
     setChatInput("");
     setIsAiLoading(true);
     try {
-      const res = await fetch('/api/gemini/player-ask', {
+      const res = await geminiFetch('/api/gemini/player-ask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

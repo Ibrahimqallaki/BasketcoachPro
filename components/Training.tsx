@@ -1,3 +1,4 @@
+import { geminiFetch } from '../services/geminiFetch';
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { dataService } from '../services/dataService';
@@ -692,7 +693,7 @@ export const Training: React.FC<TrainingProps> = ({ initialTab = 'upcoming', onD
     setAiRationale(null);
     try {
       const allEx = phases.flatMap(p => p.exercises);
-      const res = await fetch('/api/gemini/suggest-training', {
+      const res = await geminiFetch('/api/gemini/suggest-training', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
