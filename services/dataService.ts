@@ -2,6 +2,8 @@
 import { Player, TrainingSession, PlannedSession, MatchRecord, Homework, Phase, Exercise, AppTicket, TicketStatus, WarmupExercise } from '../types';
 import { mockPlayers, mockPhases, mockWarmupExercises } from './mockData';
 import { db, auth, isFirebaseConfigured } from './firebase';
+import { signInAnonymously } from 'firebase/auth';
+import { playerSession } from './playerSession';
 // Fix: Added @ts-ignore to bypass environment-specific resolution issues with Firebase exports
 // @ts-ignore
 import { 
@@ -17,7 +19,6 @@ import {
   getDoc,
   setDoc,
   where,
-  collectionGroup,
   limit,
   onSnapshot
 } from 'firebase/firestore';
@@ -501,25 +502,11 @@ export const dataService = {
     const cleanCode = accessCode.trim().toUpperCase();
     
     if (isFirebaseConfigured && db) {
-      try {
-        const playersRef = collectionGroup(db, 'players');
-        const q = query(playersRef, where('accessCode', '==', cleanCode));
-        const snapshot = await getDocs(q);
-        if (!snapshot.empty) {
-          const d = snapshot.docs[0];
-          const pathParts = d.ref.path.split('/');
-          const coachId = pathParts[1]; 
-          return { 
-            player: { id: d.id, ...d.data() } as Player, 
-            coachId 
-          };
-        }
-      } catch (err: any) {
-        console.warn("Player search index status:", err.code, err.message);
-        if (err.code === 'permission-denied') throw new Error("ACCESS_DENIED");
-        if (err.code === 'failed-precondition') throw new Error("MISSING_INDEX");
-        throw err;
-      }
+      playerSession.clear();
+      if (!auth.currentUser) await signInAnonymously(auth);
+      const result = await playerSession.request('login', { accessCode: cleanCode });
+      playerSession.set(result.session);
+      return { player: result.player, coachId: result.coachId };
     }
 
     const players = await dataService.getPlayers();

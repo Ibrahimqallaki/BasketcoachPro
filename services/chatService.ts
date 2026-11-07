@@ -1,6 +1,7 @@
 
 import { ChatMessage, ChatConversation } from '../types';
 import { db, auth, isFirebaseConfigured } from './firebase';
+import { playerSession } from './playerSession';
 // @ts-ignore
 import { 
   collection, 
@@ -41,6 +42,10 @@ export const chatService = {
     text: string,
     coachId: string
   ): Promise<void> => {
+    if (playerSession.active()) {
+      await playerSession.request('messages', { text });
+      return;
+    }
     if (!isFirebaseConfigured || !db) {
       console.warn("Firebase not configured, cannot send message.");
       return;
@@ -75,6 +80,19 @@ export const chatService = {
     recipientIds: string | string[],
     callback: (messages: ChatMessage[]) => void
   ): (() => void) => {
+    if (playerSession.active()) {
+      let stopped = false;
+      let timer: ReturnType<typeof setTimeout>;
+      const poll = async () => {
+        try {
+          const messages = await playerSession.request('messages');
+          if (!stopped) callback(messages);
+        } catch (error) { console.warn('Spelarchatten kunde inte uppdateras.'); }
+        finally { if (!stopped) timer = setTimeout(poll, 10000); }
+      };
+      void poll();
+      return () => { stopped = true; clearTimeout(timer); };
+    }
     if (!isFirebaseConfigured || !db) return () => {};
 
     try {
@@ -150,6 +168,10 @@ export const chatService = {
    * Marks a message as read by the current user.
    */
   markAsRead: async (coachId: string, messageId: string, userId: string): Promise<void> => {
+    if (playerSession.active()) {
+      await playerSession.request('read', { messageId });
+      return;
+    }
     if (!isFirebaseConfigured || !db) return;
     try {
       const messageRef = doc(db, `users/${coachId}/messages`, messageId);

@@ -14,8 +14,9 @@ import { MatchLiveScout } from './components/MatchLiveScout';
 import { ChatDashboard } from './components/ChatDashboard';
 import { auth, isFirebaseConfigured, googleProvider } from './services/firebase';
 import { dataService } from './services/dataService';
+import { playerSession } from './services/playerSession';
 // @ts-ignore
-import { onAuthStateChanged, signInWithPopup, signOut, signInAnonymously } from 'firebase/auth';
+import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
 // @ts-ignore
 import type { User as FirebaseUser } from 'firebase/auth';
 import { Trophy, AlertCircle, UserCheck, Smartphone, Check, ArrowRight, Gamepad2, Loader2, Globe, Copy, ShieldAlert, LogIn, Info, AlertTriangle, CloudLightning, HardDrive, ShieldCheck, Lock, WifiOff, Shield, DatabaseZap, Clock, Radio, User } from 'lucide-react';
@@ -131,18 +132,6 @@ const App: React.FC = () => {
     try {
         const result = await dataService.loginPlayer(playerCode);
         if (result) {
-            if (isFirebaseConfigured) {
-                try {
-                    await signInAnonymously(auth);
-                } catch (authErr: any) {
-                    if (authErr.code === 'auth/operation-not-allowed') {
-                        setLoginError({ message: "Anonym inloggning ej aktiv.", isAuthDisabled: true });
-                        setVerifyingCode(false);
-                        return;
-                    }
-                    throw authErr;
-                }
-            }
             setLoggedInPlayer(result.player);
             setCurrentCoachId(result.coachId);
             setCurrentView(View.PLAYER_PORTAL);
@@ -150,14 +139,10 @@ const App: React.FC = () => {
             setLoginError({ message: "Ogiltig kod.", isSyncIssue: true });
         }
     } catch (err: any) {
-        if (err.message === 'ACCESS_DENIED') {
-            setLoginError({ message: "Säkerhetsblockering i Firebase.", isRuleIssue: true });
-        } else if (err.message === 'INDEX_BUILDING') {
-            setLoginError({ message: "Databasen optimeras...", isIndexIssue: true, isBuilding: true });
-        } else if (err.message === 'MISSING_INDEX') {
-            setLoginError({ message: "Databas-index saknas.", isIndexIssue: true });
+        if (err.code === 'auth/operation-not-allowed') {
+            setLoginError({ message: "Anonym inloggning ej aktiv.", isAuthDisabled: true });
         } else {
-            setLoginError({ message: "Ett fel uppstod vid inloggning." });
+            setLoginError({ message: err.message || "Ett fel uppstod vid inloggning." });
         }
     } finally {
         setVerifyingCode(false);
@@ -187,6 +172,7 @@ const App: React.FC = () => {
   };
 
   const handleLogout = async () => {
+      playerSession.clear();
       // A signed-out coach must not leave youth training drafts behind on a shared device.
       if (user?.uid) {
         try { window.sessionStorage.removeItem('basketcoach_training_draft_v1:users/' + user.uid); } catch { /* storage unavailable */ }
