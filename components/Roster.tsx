@@ -370,7 +370,7 @@ export const Roster: React.FC<RosterProps> = ({ onSimulatePlayerLogin }) => {
       {/* Player Modal */}
       {modalState.show && (
         <div className="fixed inset-0 z-[800] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95">
+          <div className="w-full max-w-md max-h-[90dvh] overflow-y-auto bg-slate-900 border border-slate-800 rounded-[2.5rem] shadow-2xl animate-in zoom-in-95">
             <form onSubmit={handleSavePlayer}>
               <div className="p-8 border-b border-slate-800 flex justify-between items-center bg-slate-950/40">
                 <h3 className="text-2xl font-black text-white italic uppercase tracking-tighter">
