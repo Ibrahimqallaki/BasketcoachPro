@@ -478,6 +478,9 @@ export const Training: React.FC<TrainingProps> = ({ initialTab = 'upcoming', onD
   };
 
   const handleSavePlannedSession = async () => {
+    if (isSaving || !canSaveToCloud()) return;
+    setSaveError(null);
+    setSaveNotice(null);
     if (!selectedPhase || (selectedExercises.length === 0 && selectedWarmupIds.length === 0)) {
       alert("Välj minst en övning innan du sparar passet.");
       return;
@@ -514,6 +517,7 @@ export const Training: React.FC<TrainingProps> = ({ initialTab = 'upcoming', onD
         setSaveSuccessMessage("Planerat pass sparat!");
       }
 
+      clearDraftAfterSuccessfulSave();
       setShowSaveSuccess(true);
       const updated = await dataService.getPlannedSessions();
       setPlannedSessions(updated);
@@ -521,23 +525,32 @@ export const Training: React.FC<TrainingProps> = ({ initialTab = 'upcoming', onD
       setTimeout(() => {
         setShowSaveSuccess(false);
         setEditingPlannedSessionId(null);
+        setActivePlannedSessionId(null);
         setStep('selection');
         setSelectedExercises([]);
         setSelectedWarmupIds([]);
         setPlaylist([]);
-        setSessionTheme("");
+        setSessionTheme('');
+        setSessionDate(new Date().toISOString().split('T')[0]);
+        setSessionStartTime('18:00');
         setAiRationale(null);
+        setEvaluations([]);
+        setAttendance(Object.fromEntries(players.map(p => [p.id, 'närvarande' as AttendanceStatus])));
         setActiveTab('upcoming');
+        setSuppressDraft(false);
       }, 1200);
     } catch (err: any) {
-      console.error("Kunde inte spara planerat pass:", err);
-      alert("Kunde inte spara passet: " + (err.message || 'Okänt fel'));
+      console.error('Kunde inte spara planerat pass:', err);
+      setSaveError('Sparningen misslyckades. Dina ändringar finns kvar. Kontrollera anslutningen och försök igen.');
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleStartPlannedSession = (planned: PlannedSession) => {
+    if (hasUnsavedWork && !window.confirm('Du har ett osparat träningspass. Vill du ersätta det med det valda passet?')) return;
+    setDraftRestored(false);
+    setSaveError(null);
     // 1. Set Phase
     const ph = phases.find(p => p.id === planned.phaseId) || phases[0];
     if (ph) setSelectedPhase(ph);
@@ -589,6 +602,9 @@ export const Training: React.FC<TrainingProps> = ({ initialTab = 'upcoming', onD
   };
 
   const handleEditPlannedSession = (planned: PlannedSession) => {
+    if (hasUnsavedWork && !window.confirm('Du har osparat arbete. Vill du ersätta det med den valda planeringen?')) return;
+    setDraftRestored(false);
+    setSaveError(null);
     const ph = phases.find(p => p.id === planned.phaseId) || phases[0];
     if (ph) setSelectedPhase(ph);
 
@@ -685,33 +701,40 @@ export const Training: React.FC<TrainingProps> = ({ initialTab = 'upcoming', onD
   };
 
   const handleFinalizeSession = async () => {
-    if(!selectedPhase || playlist.length === 0) return;
+    if (!selectedPhase || playlist.length === 0 || isSaving || !canSaveToCloud()) return;
     setIsSaving(true);
+    setSaveError(null);
+    setSaveNotice(null);
     try {
-      const sessionPayload: any = {
+      const sessionPayload: Omit<TrainingSession, 'id'> = {
         date: sessionDate || new Date().toISOString().split('T')[0],
         phaseId: selectedPhase.id,
-        warmupExerciseIds: playlist.filter(i => i.type === 'warmup').map(i => i.id),
-        exerciseIds: playlist.filter(i => i.type === 'main').map(i => i.id),
-        attendance: players.map(p => ({ playerId: p.id, status: attendance[p.id] || 'frånvarande' })),
-        evaluations: evaluations
+        warmupExerciseIds: playlist.filter(item => item.type === 'warmup').map(item => item.id),
+        exerciseIds: playlist.filter(item => item.type === 'main').map(item => item.id),
+        attendance: players.map(player => ({
+          playerId: player.id,
+          status: attendance[player.id] || 'frånvarande'
+        })),
+        evaluations,
+        ...(sessionTheme.trim() ? { theme: sessionTheme.trim() } : {}),
+        ...(activePlannedSessionId ? { plannedSessionId: activePlannedSessionId } : {})
       };
-      if (sessionTheme && sessionTheme.trim()) {
-        sessionPayload.theme = sessionTheme.trim();
-      }
-      if (activePlannedSessionId) {
-        sessionPayload.plannedSessionId = activePlannedSessionId;
-      }
+      // Do not clear the local draft until Firestore confirms the session write.
       await dataService.saveSession(sessionPayload);
+      clearDraftAfterSuccessfulSave();
 
-      // If this session originated from a planned session, mark it completed or remove it from planned list
       if (activePlannedSessionId) {
-        await dataService.deletePlannedSession(activePlannedSessionId);
-        const updatedPlanned = await dataService.getPlannedSessions();
-        setPlannedSessions(updatedPlanned);
+        try {
+          await dataService.deletePlannedSession(activePlannedSessionId);
+          const updatedPlanned = await dataService.getPlannedSessions();
+          setPlannedSessions(updatedPlanned);
+        } catch (cleanupError) {
+          console.error('Träningen är sparad men det planerade passet kunde inte tas bort:', cleanupError);
+          setSaveNotice('Träningen sparades, men det planerade passet kunde inte tas bort. Kontrollera Kommande så att det inte startas igen.');
+        }
       }
 
-      setSaveSuccessMessage("Träningspass Avslutat & Sparat!");
+      setSaveSuccessMessage('Träningspass Avslutat & Sparat!');
       setShowSaveSuccess(true);
       setTimeout(() => {
         setShowSaveSuccess(false);
@@ -722,11 +745,19 @@ export const Training: React.FC<TrainingProps> = ({ initialTab = 'upcoming', onD
         setPlaylist([]);
         setActivePlaylistItemIndex(0);
         setTimer(0);
+        setIsPaused(true);
         setActivePlannedSessionId(null);
         setEditingPlannedSessionId(null);
-        setSessionTheme("");
+        setSessionTheme('');
+        setSessionDate(new Date().toISOString().split('T')[0]);
+        setSessionStartTime('18:00');
+        setAttendance(Object.fromEntries(players.map(p => [p.id, 'närvarande' as AttendanceStatus])));
         setActiveTab('sessions');
+        setSuppressDraft(false);
       }, 1500);
+    } catch (error) {
+      console.error('Kunde inte avsluta träningspasset:', error);
+      setSaveError('Träningspasset kunde inte sparas. Närvaro och bedömningar finns kvar. Försök igen när anslutningen fungerar.');
     } finally {
       setIsSaving(false);
     }
@@ -740,10 +771,47 @@ export const Training: React.FC<TrainingProps> = ({ initialTab = 'upcoming', onD
       if (selectedSession?.id === id) setSelectedSession(null);
   };
 
-  if (loading && players.length === 0) return <div className="h-full flex items-center justify-center"><Loader2 className="animate-spin text-orange-500" /></div>;
+  if (loading && players.length === 0) return <div role="status" className="h-full flex items-center justify-center"><Loader2 className="animate-spin text-orange-500" /></div>;
+  if (loadError && players.length === 0) return (
+    <div className="mx-auto max-w-xl space-y-4 rounded-2xl border border-rose-500/30 bg-slate-900 p-8 text-center">
+      <p role="alert" className="text-sm text-rose-300">{loadError}</p>
+      <button type="button" onClick={() => void loadData()} className="min-h-[48px] rounded-xl bg-orange-600 px-6 text-sm font-bold text-white">Försök igen</button>
+    </div>
+  );
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-24 relative">
+      {!isOnline && dataService.getUserPath() && (
+        <div role="alert" className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm font-medium text-amber-200">
+          Du är offline. Du kan fortsätta arbeta i den här fliken, men spara inte till molnet förrän anslutningen fungerar igen.
+        </div>
+      )}
+      {draftRestored && (
+        <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-100">
+          <span>Osparat träningsarbete har återställts. Timern är pausad.</span>
+          <button type="button" onClick={() => setActiveTab('active')} className="min-h-[44px] rounded-xl bg-emerald-700 px-4 font-bold text-white">Fortsätt passet</button>
+        </div>
+      )}
+      {hasUnsavedWork && !suppressDraft && (
+        <div role="status" className="rounded-xl border border-orange-500/20 bg-orange-500/5 px-4 py-3 text-xs font-semibold text-orange-200">
+          Osparat arbete {draftKey && !draftStorageError ? '– säkerhetskopia i den här webbläsarfliken' : '– lämna inte sidan utan att spara'}
+        </div>
+      )}
+      {draftStorageError && (
+        <div role="alert" className="rounded-xl border border-amber-500/30 p-4 text-sm text-amber-200">
+          Webbläsaren tillåter inte tillfällig säkerhetskopiering. Behåll fliken öppen tills träningspasset har sparats.
+        </div>
+      )}
+      {saveError && (
+        <div role="alert" className="rounded-xl border border-rose-500/40 bg-rose-950/30 p-4 text-sm text-rose-200">
+          {saveError}
+        </div>
+      )}
+      {saveNotice && (
+        <div role="status" className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-200">
+          {saveNotice}
+        </div>
+      )}
       {showSaveSuccess && (
         <div className="fixed inset-0 z-[200] bg-slate-950/95 backdrop-blur-xl flex items-center justify-center animate-in zoom-in">
           <div className="text-center space-y-4">
@@ -760,9 +828,8 @@ export const Training: React.FC<TrainingProps> = ({ initialTab = 'upcoming', onD
           type="button"
           aria-pressed={activeTab === 'active'}
           onClick={() => {
+            // Returning to a running training must not unset its planned-session link.
             setActiveTab('active');
-            setEditingPlannedSessionId(null);
-            setActivePlannedSessionId(null);
           }}
           className={`flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-[10px] font-black uppercase tracking-wide transition-colors sm:flex-row ${activeTab === 'active' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
         >
@@ -828,6 +895,8 @@ export const Training: React.FC<TrainingProps> = ({ initialTab = 'upcoming', onD
                 setSelectedWarmupIds([]);
                 setPlaylist([]);
                 setStep('selection');
+                setDraftRestored(false);
+                setSaveError(null);
                 setActiveTab('active');
               }}
               className="px-6 py-3.5 rounded-2xl bg-orange-600 hover:bg-orange-500 text-white font-black text-xs uppercase tracking-widest shadow-lg shadow-orange-900/30 flex items-center justify-center gap-2 transition-all active:scale-95"
