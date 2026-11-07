@@ -120,6 +120,8 @@ export interface Player {
  * Represents a single chat message in the system.
  */
 export interface ChatMessage {
+  /** Client-only Firestore state; never saved as a message field. */
+  pending?: boolean;
   id: string;
   senderId: string;
   senderName: string;

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Send, 
@@ -20,6 +20,7 @@ import { dataService } from '../services/dataService';
 import { chatService } from '../services/chatService';
 import { auth } from '../services/firebase';
 import { notificationService } from '../services/notificationService';
+import { getPlayerChatSummary, readStateLabels } from '../services/chatStatus';
 
 interface ChatDashboardProps {
   coachId: string;
@@ -30,7 +31,13 @@ export const ChatDashboard: React.FC<ChatDashboardProps> = ({ coachId }) => {
   const [selectedRecipientId, setSelectedRecipientId] = useState<string>('TEAM');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [allMessages, setAllMessages] = useState<ChatMessage[]>([]);
+  const [overviewLoaded, setOverviewLoaded] = useState(false);
+  const [overviewError, setOverviewError] = useState('');
   const [inputText, setInputText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState('');
+  const [readError, setReadError] = useState('');
+  const [loadingMessages, setLoadingMessages] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [isMobileListOpen, setIsMobileListOpen] = useState(true);
   
@@ -53,19 +60,35 @@ export const ChatDashboard: React.FC<ChatDashboardProps> = ({ coachId }) => {
 
   // Subscribe to ALL messages for unread counts
   useEffect(() => {
+    setOverviewLoaded(false);
+    setAllMessages([]);
+    setOverviewError('');
     const unsubscribe = chatService.subscribeToAllMessages(coachId, (data) => {
       setAllMessages(data);
+      setOverviewLoaded(true);
+      setOverviewError('');
+    }, () => {
+      setOverviewLoaded(false);
+      setOverviewError('Spelarnas lässtatus kunde inte hämtas. Försök igen efter att du kontrollerat inloggningen.');
     });
     return () => unsubscribe();
   }, [coachId]);
 
   // Subscribe to current conversation
   useEffect(() => {
+    let active = true;
+    setMessages([]);
+    setReadError('');
+    setLoadingMessages(true);
+    lastMessageIdRef.current = null;
     const unsubscribe = chatService.subscribeToMessages(
       coachId,
       currentUserId,
       [selectedRecipientId],
       (data) => {
+        if (!active) return;
+        setReadError('');
+        setLoadingMessages(false);
         setMessages(data);
         
         // Handle notifications for new messages
@@ -91,9 +114,14 @@ export const ChatDashboard: React.FC<ChatDashboardProps> = ({ coachId }) => {
             }
           }
         });
+      },
+      () => {
+        if (!active) return;
+        setLoadingMessages(false);
+        setReadError('Konversationen kunde inte hämtas. Kontrollera din inloggning och försök igen.');
       }
     );
-    return () => unsubscribe();
+    return () => { active = false; unsubscribe(); };
   }, [coachId, currentUserId, selectedRecipientId]);
 
   // Auto-scroll to bottom
@@ -103,10 +131,11 @@ export const ChatDashboard: React.FC<ChatDashboardProps> = ({ coachId }) => {
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!inputText.trim()) return;
+    if (!inputText.trim() || sending) return;
 
     const text = inputText;
-    setInputText("");
+    setSending(true);
+    setSendError('');
 
     try {
       await chatService.sendMessage(
@@ -117,16 +146,21 @@ export const ChatDashboard: React.FC<ChatDashboardProps> = ({ coachId }) => {
         text,
         coachId
       );
+      setInputText('');
     } catch (error) {
+      setSendError('Meddelandet kunde inte skickas. Texten finns kvar så att du kan försöka igen.');
       console.error("Failed to send message", error);
-    }
+    } finally { setSending(false); }
   };
 
+  const playerSummaries = useMemo<Record<string, ReturnType<typeof getPlayerChatSummary>>>(() => Object.fromEntries(players.map(player => [
+    player.id, getPlayerChatSummary(allMessages, player.id, coachId),
+  ])), [players, allMessages, coachId]);
+
   const getUnreadCount = (recipientId: string) => {
+    if (recipientId !== 'TEAM') return playerSummaries[recipientId]?.unreadReplies || 0;
     return allMessages.filter(msg => {
-      const isRelevant = recipientId === 'TEAM' 
-        ? msg.recipientId === 'TEAM' 
-        : (msg.senderId === recipientId && msg.recipientId === currentUserId);
+      const isRelevant = msg.recipientId === 'TEAM' && msg.senderRole === 'player';
       return isRelevant && !msg.readBy.includes(currentUserId);
     }).length;
   };
@@ -181,6 +215,8 @@ export const ChatDashboard: React.FC<ChatDashboardProps> = ({ coachId }) => {
 
           <div className="px-4 py-3 md:py-4">
             <h3 className="text-[9px] md:text-[10px] font-black text-slate-600 uppercase tracking-[0.2em]">Individuella Spelare</h3>
+            <p className="mt-2 text-[10px] text-slate-400">Lässtatus gäller ditt senaste meddelande till laget respektive spelaren.</p>
+            {overviewError && <p role="alert" className="mt-2 text-xs text-rose-400">{overviewError}</p>}
           </div>
 
           {filteredPlayers.map(player => (
@@ -198,7 +234,7 @@ export const ChatDashboard: React.FC<ChatDashboardProps> = ({ coachId }) => {
                   )}
                 </div>
                 {getUnreadCount(player.id) > 0 && (
-                  <div className="absolute -top-1 -right-1 w-4 h-4 md:w-5 md:h-5 rounded-full bg-rose-500 text-white text-[9px] md:text-[10px] font-black flex items-center justify-center border-2 border-slate-900">
+                  <div aria-label={`${getUnreadCount(player.id)} olästa svar från ${player.name}`} className="absolute -top-1 -right-1 w-4 h-4 md:w-5 md:h-5 rounded-full bg-rose-500 text-white text-[9px] md:text-[10px] font-black flex items-center justify-center border-2 border-slate-900">
                     {getUnreadCount(player.id)}
                   </div>
                 )}
@@ -206,6 +242,13 @@ export const ChatDashboard: React.FC<ChatDashboardProps> = ({ coachId }) => {
               <div className="flex-1 text-left min-w-0">
                 <div className="text-xs md:text-sm font-bold truncate">{player.name}</div>
                 <div className="text-[9px] md:text-[10px] text-slate-500 font-bold uppercase">{player.position || 'Spelare'}</div>
+                {overviewLoaded ? (
+                  <div className="mt-1 space-y-0.5 text-[10px] leading-snug" aria-live="polite">
+                    <div className={playerSummaries[player.id].teamState === 'read' ? 'text-emerald-400' : 'text-slate-400'}>Lag: {readStateLabels[playerSummaries[player.id].teamState]}</div>
+                    {playerSummaries[player.id].latestDirect && <div className={playerSummaries[player.id].directState === 'read' ? 'text-emerald-400' : 'text-slate-400'}>Privat: {readStateLabels[playerSummaries[player.id].directState]}</div>}
+                    {getUnreadCount(player.id) > 0 && <div className="text-rose-400 font-bold">{getUnreadCount(player.id)} olästa svar</div>}
+                  </div>
+                ) : <div className="mt-1 text-[10px] text-slate-400">{overviewError ? 'Lässtatus otillgänglig' : 'Hämtar lässtatus...'}</div>}
               </div>
             </button>
           ))}
@@ -243,7 +286,9 @@ export const ChatDashboard: React.FC<ChatDashboardProps> = ({ coachId }) => {
         {/* Messages List */}
         <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 custom-scrollbar">
           <div className="flex flex-col gap-4">
-            {messages.length === 0 && (
+            {readError && <p role="alert" className="text-sm text-rose-400">{readError}</p>}
+            {loadingMessages && <p role="status" className="text-sm text-slate-400">Hämtar konversationen...</p>}
+            {!readError && !loadingMessages && messages.length === 0 && (
               <div className="flex flex-col items-center justify-center py-20 opacity-20">
                 <MessageSquare className="w-12 h-12 md:w-16 md:h-16 mb-4" />
                 <p className="text-xs md:text-sm font-black uppercase italic text-center">Inga meddelanden än</p>
@@ -307,6 +352,7 @@ export const ChatDashboard: React.FC<ChatDashboardProps> = ({ coachId }) => {
                 type="text" 
                 placeholder={selectedRecipientId === 'TEAM' ? "Skriv till laget..." : `Skriv till ${selectedPlayer?.name.split(' ')[0]}...`}
                 value={inputText}
+                disabled={sending}
                 onChange={(e) => setInputText(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl md:rounded-2xl py-3 md:py-4 pl-4 md:pl-6 pr-10 md:pr-12 text-xs md:text-sm text-white focus:border-blue-500 outline-none transition-all shadow-inner"
               />
@@ -316,12 +362,14 @@ export const ChatDashboard: React.FC<ChatDashboardProps> = ({ coachId }) => {
             </div>
             <button 
               type="submit"
-              disabled={!inputText.trim()}
+              aria-label="Skicka meddelande"
+              disabled={!inputText.trim() || sending}
               className="w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl bg-blue-600 text-white flex items-center justify-center hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 transition-all shadow-lg shadow-blue-900/20 active:scale-95"
             >
               <Send className="w-4.5 h-4.5 md:w-6 md:h-6" />
             </button>
           </form>
+          {sendError && <p role="alert" className="mt-3 text-xs text-rose-400">{sendError}</p>}
           <div className="mt-3 md:mt-4 flex items-center justify-center gap-3 md:gap-4">
              <div className="flex items-center gap-1 text-[7px] md:text-[8px] font-black text-slate-600 uppercase tracking-widest">
                <ShieldCheck className="w-2 h-2 md:w-2.5 md:h-2.5 text-emerald-500" /> Krypterat
