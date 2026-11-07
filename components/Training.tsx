@@ -396,6 +396,8 @@ export const Training: React.FC<TrainingProps> = ({ initialTab = 'upcoming', onD
   useEffect(() => () => {
     const current = latestDraftRef.current;
     if (!current?.key || !current.ready || current.suppressed) return;
+    // Never rewrite youth data after the coach signs out or changes account.
+    if (dataService.getUserPath() !== current.key.slice(TRAINING_DRAFT_PREFIX.length)) return;
     try {
       if (current.dirty) {
         window.sessionStorage.setItem(current.key, JSON.stringify(current.snapshot));
@@ -407,6 +409,7 @@ export const Training: React.FC<TrainingProps> = ({ initialTab = 'upcoming', onD
 
   const persistDraft = () => {
     if (!draftKey || !draftReady || suppressDraft) return;
+    if (dataService.getUserPath() !== draftKey.slice(TRAINING_DRAFT_PREFIX.length)) return;
     try {
       if (hasUnsavedWork) window.sessionStorage.setItem(draftKey, JSON.stringify(draftSnapshot));
       else window.sessionStorage.removeItem(draftKey);
