@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
+import { generateKeyPairSync, sign } from 'node:crypto';
+import { verifyFirebaseIdToken } from '../services/verifyGeminiAuth.js';
+import config from '../firebase-applet-config.json' with { type: 'json' };
 import { createPlayerPortalApi } from '../services/playerPortalApi.js';
 import { codeDigest, readSession, signSession } from '../services/playerPortalPolicy.js';
 
@@ -199,4 +202,22 @@ test('real Vercel app routes health and fails closed without server credentials'
   const response = await fetch(`${origin}/api/player/login`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-token' }, body: JSON.stringify({ accessCode: 'TEST' }) });
   assert.equal(response.status, 503);
   assert.match((await response.json()).error, /inte konfigurerad/);
+});
+
+test('actual Firebase verifier checks RSA signature, audience, issuer and expiry', async t => {
+  const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({ test: publicKey.export({ type: 'spki', format: 'pem' }) }), { headers: { 'cache-control': 'max-age=60' } })) as typeof fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const now = Math.floor(Date.now() / 1000);
+  const claims = { sub: 'verified-user', aud: config.projectId, iss: `https://securetoken.google.com/${config.projectId}`, iat: now, auth_time: now, exp: now + 300 };
+  const token = (payload: object) => {
+    const data = `${Buffer.from(JSON.stringify({ alg: 'RS256', kid: 'test' })).toString('base64url')}.${Buffer.from(JSON.stringify(payload)).toString('base64url')}`;
+    return `${data}.${sign('RSA-SHA256', Buffer.from(data), privateKey).toString('base64url')}`;
+  };
+  assert.equal(await verifyFirebaseIdToken(token(claims)), 'verified-user');
+  assert.equal(await verifyFirebaseIdToken(token({ ...claims, aud: 'other-project' })), null);
+  assert.equal(await verifyFirebaseIdToken(token({ ...claims, iss: 'forged-issuer' })), null);
+  assert.equal(await verifyFirebaseIdToken(token({ ...claims, exp: now - 1 })), null);
+  assert.equal(await verifyFirebaseIdToken(`${token(claims)}x`), null);
 });

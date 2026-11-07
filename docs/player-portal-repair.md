@@ -6,7 +6,7 @@ Utgångspunkt: main `ee5060a611f35f7c5c1bfcf73fc90a89ce92bb3e`, Vercel-projekt `
 
 Inloggningsrutan, personliga koder, kodhanteringen under Laget, dashboardens flikar och Scoreboard Live behålls. Inga Firestore-regler ändras. Ingen ny extern tjänst införs.
 
-Klienten skapar/återanvänder en Firebase-session och skickar koden till `POST /api/player/login`. Firebase Admin verifierar ID-token kryptografiskt och söker koden i rätt databas. Exakt en träff krävs. Servern returnerar en signerad åttatimmarssession, bunden till Firebase-UID, spelare, coach, deployment och aktuell kod. Den hålls bara i flikens minne, inte i localStorage eller URL. Utloggning tar bort den. Omladdning kräver ny kodinloggning, liksom tidigare.
+Klienten skapar/återanvänder en Firebase-session och skickar koden till `POST /api/player/login`. Den befintliga strikta RSA-verifieraren i verifyGeminiAuth verifierar ID-token kryptografiskt; Firebase Admin söker koden i rätt databas. Exakt en träff krävs. Servern returnerar en signerad åttatimmarssession, bunden till Firebase-UID, spelare, coach, deployment och aktuell kod. Den hålls bara i flikens minne, inte i localStorage eller URL. Utloggning tar bort den. Omladdning kräver ny kodinloggning, liksom tidigare.
 
 Alla privata spelaranrop kräver både Firebase-token och spelarens signerade session. Servern läser alltid aktuell spelare och kod igen. Ändrad kod eller borttagen spelare spärrar fortsatta anrop från den gamla sessionen; redan visad information kan inte tas tillbaka från skärmen. Klienten väljer aldrig vilken coach/spelare servern ska läsa eller skriva för.
 
@@ -42,6 +42,8 @@ Kör `npm run test:player-portal` och `npm run build` (bygget inkluderar TypeScr
 
 Säkerhetstester täcker giltig kod, fel kod, dubbla koder, avvisad Firebase-identitet, ingen session, manipulerad/utgången/överförd session, kodbyte, borttagen spelare, projektion av egen data, begränsade uppdragsskrivningar, chattisolering, avsändarförfalskning, feedbackfält och begränsning av kodgissning.
 
+Vercels Node 26-loader avvisade Admin Auths indirekta CommonJS/ESM-import (jwks-rsa/jose) trots grönt bygge. Spelar-API:t återanvänder därför appens befintliga strikta RSA-verifierare i verifyGeminiAuth, med separata tester av signatur, issuer, audience och giltighetstid, medan Admin SDK används för Firestore.
+
 Verifierat lokalt: ren installation från låsfilen, godkänd TypeScript/produktionsbuild och isolerade API-tester. Den verkliga Express-appens health-route och nekad åtkomst utan session/serverbehörighet ingår också. Windows krävde en lokal komplettering av Rollups plattformspaket; inga beroendeversioner avvek från låsfilen. Inga privata nycklar finns i klientbygget.
 
 En separat, lokal reproduktion bekräftade att `verifyFirebaseToken` i den gamla integrationshjälpen accepterar en syntetisk JWT med fel signatur och fel issuer om audience stämmer. Testet gjorde inga databasoperationer. Det nya spelar-API:t använder inte den hjälpen.
@@ -70,7 +72,7 @@ Gör ingen merge, production deployment eller publicering av Firestore-regler f�
 | Prioritet | Fynd i main | Följd / återstående kontroll |
 | --- | --- | --- |
 | P1 | `firestore.rules` saknar tillåtande regel för `live_matches`, som `liveMatchService.ts` använder. | Repo-reglerna skulle neka Live. Eftersom användaren uppger att Live fungerar kan publicerade regler avvika. Läs och jämför verkliga regler före varje framtida regelpublicering. Publicera inte repo-filen blint. Verkliga regler har inte kunnat läsas här. |
-| P1 | `verifyFirebaseToken` i `services/firestoreDb.ts` avkodar JWT utan signaturkontroll, och accepterar matchande audience **eller** issuer. | Integrations-API:ts coachidentifiering kan förfalskas. REST-läsningarna skickar token vidare till Firestore, som fortfarande kan neka den; detta fynd bevisar inte dataläckage. En separat ändring bör återanvända kryptografisk verifiering. Nya spelar-API:t använder Firebase Admin och använder inte denna hjälpfunktion. |
+| P1 | `verifyFirebaseToken` i `services/firestoreDb.ts` avkodar JWT utan signaturkontroll, och accepterar matchande audience **eller** issuer. | Integrations-API:ts coachidentifiering kan förfalskas. REST-läsningarna skickar token vidare till Firestore, som fortfarande kan neka den; detta fynd bevisar inte dataläckage. En separat ändring bör återanvända kryptografisk verifiering. Nya spelar-API:t använder den separata kryptografiska verifieraren i verifyGeminiAuth samt Firebase Admin för databasen, och använder inte denna osäkra hjälpfunktion. |
 | P1 | Skrivande `/api/v1/matches` och `/planned-sessions` använder serverns web-SDK utan att ge SDK:n anroparens autentiserade session. | Med strikta owner-regler förväntas skrivningar nekas även med giltig token till API:t. Behöver verifieras med riktig coachsession och repareras separat; ingen testsparning mot verkliga data har gjorts. |
 | P1 | `app_settings` kan skrivas och `app_tickets` läsas/ändras av alla autentiserade, även anonyma, enligt repots regler. | UI:ts superadmin-kontroll är inte ett serverbehörighetsskydd. Whitelist och supportärenden behöver en separat regelgranskning. Publicerade regler kan avvika. |
 | P2 | Vercel har miljövariabler enbart för Production enligt granskad metadata. | Preview saknar Gemini-nyckel och nya serverbehörigheten; ett grönt frontendbygge bevisar inte att API-funktioner fungerar. |

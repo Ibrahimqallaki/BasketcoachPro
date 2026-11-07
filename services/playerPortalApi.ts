@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, Timestamp, getFirestore, type DocumentReference } from 'firebase-admin/firestore';
 import config from '../firebase-applet-config.json' with { type: 'json' };
 import { codeDigest, signSession, readSession, portalPlayer, portalMatch, portalTraining } from './playerPortalPolicy.js';
+import { verifyFirebaseIdToken } from './verifyGeminiAuth.js';
 
 function backend() {
   // Never use a VITE_ variable for service credentials. Fail closed if absent.
@@ -13,7 +13,15 @@ function backend() {
   try { account = JSON.parse(raw); } catch { throw new Error('PLAYER_BACKEND_NOT_CONFIGURED'); }
   if (account.project_id !== config.projectId || !account.private_key) throw new Error('PLAYER_BACKEND_NOT_CONFIGURED');
   const app = getApps().find(a => a.name === 'player-portal-admin') || initializeApp({ credential: cert(account) }, 'player-portal-admin');
-  return { db: getFirestore(app, config.firestoreDatabaseId || '(default)'), auth: getAuth(app), secret: account.private_key as string };
+  // Admin Auth imports jwks-rsa -> ESM jose via require(), rejected by Vercel's
+  // loader. Reuse the existing strict RSA signature/issuer/audience/time verifier;
+  // Admin Firestore still provides privileged, server-only database access.
+  const auth = { verifyIdToken: async (token: string) => {
+    const uid = await verifyFirebaseIdToken(token);
+    if (!uid) throw new Error('INVALID_FIREBASE_TOKEN');
+    return { uid };
+  } };
+  return { db: getFirestore(app, config.firestoreDatabaseId || '(default)'), auth, secret: account.private_key as string };
 }
 
 // Dependency injection keeps authorization tests isolated from the real Firebase project.
