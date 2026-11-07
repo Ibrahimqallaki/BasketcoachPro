@@ -130,6 +130,8 @@ export const Account: React.FC<AccountProps> = ({ user }) => {
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [uidCopied, setUidCopied] = useState(false);
   const [openApiCopied, setOpenApiCopied] = useState(false);
+  const [tokenCopied, setTokenCopied] = useState(false);
+  const [isGettingToken, setIsGettingToken] = useState(false);
 
   const handleManualSync = async () => {
     setSyncingCloud(true);
@@ -156,6 +158,21 @@ export const Account: React.FC<AccountProps> = ({ user }) => {
     navigator.clipboard.writeText(url);
     setOpenApiCopied(true);
     setTimeout(() => setOpenApiCopied(false), 2000);
+  };
+
+  const copyFirebaseToken = async () => {
+    if (!user || user.uid === 'guest') return;
+    setIsGettingToken(true);
+    try {
+      const token = await user.getIdToken(true);
+      navigator.clipboard.writeText(token);
+      setTokenCopied(true);
+      setTimeout(() => setTokenCopied(false), 2500);
+    } catch (err: any) {
+      console.error('Failed to get token:', err);
+    } finally {
+      setIsGettingToken(false);
+    }
   };
 
   const isGuest = !user || user.uid === 'guest';
@@ -659,6 +676,20 @@ service cloud.firestore {
                     >
                       {openApiCopied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
                       {openApiCopied ? 'Kopierat!' : 'Kopiera URL'}
+                    </button>
+                  </div>
+
+                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 font-mono text-[10px] text-slate-300 flex justify-between items-center">
+                    <div className="truncate pr-2">
+                      <span className="text-slate-500">Firebase ID Token:</span> <span className="text-amber-400 font-medium">{isGuest ? 'Logga in för att generera token' : (tokenCopied ? 'Kopierad till urklipp!' : 'Aktiv inloggningstoken (giltig 60 min)')}</span>
+                    </div>
+                    <button
+                      onClick={copyFirebaseToken}
+                      disabled={isGuest || isGettingToken}
+                      className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded text-[9px] font-bold shrink-0 flex items-center gap-1 disabled:opacity-40"
+                    >
+                      {tokenCopied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                      {tokenCopied ? 'Kopierad!' : 'Kopiera Bearer Token'}
                     </button>
                   </div>
                 </div>

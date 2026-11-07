@@ -9,7 +9,8 @@ import {
   serverDb, 
   cleanFirestoreData, 
   resolveAuthenticatedCoach, 
-  sanitizePlayerForApi 
+  sanitizePlayerForApi,
+  queryUserCollectionViaRest 
 } from './services/firestoreDb';
 import { 
   collection, 
@@ -447,14 +448,25 @@ app.post('/api/gemini/generate-image', async (req, res) => {
 });
 
 // Helper to enforce coach authentication on private endpoints
+// Helper to enforce coach authentication on private endpoints
 const requireCoachAuth = (req: express.Request, res: express.Response): string | null => {
   const authCoach = resolveAuthenticatedCoach(req);
   if (!authCoach || !authCoach.coachId) {
     res.status(401).json({
-      error: "Behörighet saknas. Ange giltig Firebase-autentisering (Bearer token, x-coach-uid header eller coachId query parameter)."
+      error: "Behörighet saknas. Ange en giltig och verifierad Firebase ID-token i headern: Authorization: Bearer <firebase_id_token>."
     });
     return null;
   }
+
+  // Strict ownership verification: If a coachId was also explicitly requested in query, it MUST match the token's UID
+  const requestedCoachId = req.query.coachId as string;
+  if (requestedCoachId && requestedCoachId.trim() && requestedCoachId.trim() !== authCoach.coachId) {
+    res.status(403).json({
+      error: "Åtkomst nekad: Du har inte behörighet att läsa eller modifiera en annan coachs data."
+    });
+    return null;
+  }
+
   return authCoach.coachId;
 };
 
@@ -465,53 +477,30 @@ app.get('/api/v1/team-summary', async (req, res) => {
     if (!coachId) return;
 
     let coachInfo: any = {};
-    try {
-      const coachSnap = await getDoc(doc(serverDb, `users/${coachId}`));
-      if (coachSnap.exists()) coachInfo = coachSnap.data();
-    } catch (e: any) {
-      console.warn(`Could not read coach doc for ${coachId}:`, e.message);
+    const coachSnap = await getDoc(doc(serverDb, `users/${coachId}`));
+    if (coachSnap.exists()) {
+      coachInfo = coachSnap.data();
     }
+
+    // Forward the caller's verified Authorization header to Firestore REST API to evaluate request.auth.uid == coachId
+    const authHeader = req.headers.authorization;
 
     // 1. Matches
-    let matches: any[] = [];
-    try {
-      const matchesCol = collection(serverDb, `users/${coachId}/matches`);
-      const matchesSnap = await getDocs(query(matchesCol, orderBy('date', 'desc')));
-      matches = matchesSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
-    } catch (e: any) {
-      console.warn(`Could not read matches for coach ${coachId}:`, e.message);
-    }
+    const matches = await queryUserCollectionViaRest(coachId, 'matches', authHeader);
+    matches.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
     // 2. Planned Sessions
-    let plannedSessions: any[] = [];
-    try {
-      const plannedCol = collection(serverDb, `users/${coachId}/planned_sessions`);
-      const plannedSnap = await getDocs(query(plannedCol, orderBy('date', 'asc')));
-      plannedSessions = plannedSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
-    } catch (e: any) {
-      console.warn(`Could not read planned sessions for coach ${coachId}:`, e.message);
-    }
+    const plannedSessions = await queryUserCollectionViaRest(coachId, 'planned_sessions', authHeader);
+    plannedSessions.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 
     // 3. Players
-    let safePlayers: any[] = [];
-    try {
-      const playersCol = collection(serverDb, `users/${coachId}/players`);
-      const playersSnap = await getDocs(query(playersCol, orderBy('number', 'asc')));
-      const rawPlayers = playersSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
-      safePlayers = rawPlayers.map(sanitizePlayerForApi);
-    } catch (e: any) {
-      console.warn(`Could not read players for coach ${coachId}:`, e.message);
-    }
+    const rawPlayers = await queryUserCollectionViaRest(coachId, 'players', authHeader);
+    rawPlayers.sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0));
+    const safePlayers = rawPlayers.map(sanitizePlayerForApi);
 
     // 4. Completed Sessions
-    let sessions: any[] = [];
-    try {
-      const sessionsCol = collection(serverDb, `users/${coachId}/sessions`);
-      const sessionsSnap = await getDocs(query(sessionsCol, orderBy('date', 'desc')));
-      sessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
-    } catch (e: any) {
-      console.warn(`Could not read sessions for coach ${coachId}:`, e.message);
-    }
+    const sessions = await queryUserCollectionViaRest(coachId, 'sessions', authHeader);
+    sessions.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
     const latestMatch = matches[0] || null;
     const upcoming = plannedSessions.filter(s => s.status === 'planned');
@@ -564,7 +553,8 @@ app.get('/api/v1/team-summary', async (req, res) => {
     });
   } catch (err: any) {
     console.error('Error fetching team summary:', err);
-    res.status(500).json({ error: err.message });
+    const status = err.code === 'permission-denied' ? 403 : 500;
+    res.status(status).json({ error: err.message, code: err.code });
   }
 });
 
@@ -573,14 +563,9 @@ app.get('/api/v1/players', async (req, res) => {
     const coachId = requireCoachAuth(req, res);
     if (!coachId) return;
 
-    let players: any[] = [];
-    try {
-      const playersCol = collection(serverDb, `users/${coachId}/players`);
-      const snap = await getDocs(query(playersCol, orderBy('number', 'asc')));
-      players = snap.docs.map(d => sanitizePlayerForApi({ id: d.id, ...d.data() }));
-    } catch (e: any) {
-      console.warn(`Could not read players for coach ${coachId}:`, e.message);
-    }
+    const rawPlayers = await queryUserCollectionViaRest(coachId, 'players', req.headers.authorization);
+    rawPlayers.sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0));
+    const players = rawPlayers.map(sanitizePlayerForApi);
 
     res.json({
       total: players.length,
@@ -588,7 +573,8 @@ app.get('/api/v1/players', async (req, res) => {
     });
   } catch (err: any) {
     console.error('Error fetching players:', err);
-    res.status(500).json({ error: err.message });
+    const status = err.code === 'permission-denied' ? 403 : 500;
+    res.status(status).json({ error: err.message, code: err.code });
   }
 });
 
@@ -646,14 +632,8 @@ app.get('/api/v1/matches', async (req, res) => {
     const coachId = requireCoachAuth(req, res);
     if (!coachId) return;
 
-    let matches: any[] = [];
-    try {
-      const matchesCol = collection(serverDb, `users/${coachId}/matches`);
-      const snap = await getDocs(query(matchesCol, orderBy('date', 'desc')));
-      matches = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    } catch (e: any) {
-      console.warn(`Could not read matches for coach ${coachId}:`, e.message);
-    }
+    const matches = await queryUserCollectionViaRest(coachId, 'matches', req.headers.authorization);
+    matches.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
     res.json({
       total: matches.length,
@@ -661,7 +641,8 @@ app.get('/api/v1/matches', async (req, res) => {
     });
   } catch (err: any) {
     console.error('Error fetching matches:', err);
-    res.status(500).json({ error: err.message });
+    const status = err.code === 'permission-denied' ? 403 : 500;
+    res.status(status).json({ error: err.message, code: err.code });
   }
 });
 
@@ -691,7 +672,8 @@ app.post('/api/v1/matches', async (req, res) => {
     res.status(201).json({ success: true, match: matchData });
   } catch (err: any) {
     console.error('Error saving match:', err);
-    res.status(500).json({ error: err.message });
+    const status = err.code === 'permission-denied' ? 403 : 500;
+    res.status(status).json({ error: err.message, code: err.code });
   }
 });
 
@@ -712,7 +694,8 @@ app.put('/api/v1/matches/:id', async (req, res) => {
     res.json({ success: true, match: { id: snap.id, ...snap.data() } });
   } catch (err: any) {
     console.error('Error updating match:', err);
-    res.status(500).json({ error: err.message });
+    const status = err.code === 'permission-denied' ? 403 : 500;
+    res.status(status).json({ error: err.message, code: err.code });
   }
 });
 
@@ -721,14 +704,8 @@ app.get('/api/v1/planned-sessions', async (req, res) => {
     const coachId = requireCoachAuth(req, res);
     if (!coachId) return;
 
-    let plannedSessions: any[] = [];
-    try {
-      const plannedCol = collection(serverDb, `users/${coachId}/planned_sessions`);
-      const snap = await getDocs(query(plannedCol, orderBy('date', 'asc')));
-      plannedSessions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    } catch (e: any) {
-      console.warn(`Could not read planned sessions for coach ${coachId}:`, e.message);
-    }
+    const plannedSessions = await queryUserCollectionViaRest(coachId, 'planned_sessions', req.headers.authorization);
+    plannedSessions.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 
     res.json({
       total: plannedSessions.length,
@@ -736,7 +713,8 @@ app.get('/api/v1/planned-sessions', async (req, res) => {
     });
   } catch (err: any) {
     console.error('Error fetching planned sessions:', err);
-    res.status(500).json({ error: err.message });
+    const status = err.code === 'permission-denied' ? 403 : 500;
+    res.status(status).json({ error: err.message, code: err.code });
   }
 });
 
