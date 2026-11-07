@@ -1,39 +1,10 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { dataService } from '../services/dataService';
 import { WarmupExercise, WarmupPhase } from '../types';
-import { 
-  Flame, 
-  Activity, 
-  Zap, 
-  ShieldCheck, 
-  Clock, 
-  Info, 
-  Play, 
-  ChevronRight, 
-  Search,
-  BookOpen,
-  CheckCircle2,
-  Target,
-  Youtube
+import {
+  Activity, BookOpen, CheckCircle2, ChevronLeft, ChevronRight, Clock,
+  Flame, Info, Loader2, Play, Search, ShieldCheck, Target, Youtube, Zap
 } from 'lucide-react';
-
-// Super-robust YouTube ID extractor for all formats
-const getVideoId = (url: string) => {
-  if (!url) return null;
-  
-  // Handle various YouTube URL formats
-  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=|shorts\/)([^#\&\?]*).*/;
-  const match = url.match(regExp);
-  
-  if (match && match[2]) {
-    // Extract exactly 11 characters (standard YouTube ID length)
-    const id = match[2].trim();
-    return id.length >= 11 ? id.substring(0, 11) : null;
-  }
-  
-  return null;
-};
 
 interface WarmupLibraryProps {
   onSelect?: (exercise: WarmupExercise) => void;
@@ -41,286 +12,369 @@ interface WarmupLibraryProps {
   isSelectionMode?: boolean;
 }
 
-export const WarmupLibrary: React.FC<WarmupLibraryProps> = ({ onSelect, selectedIds = [], isSelectionMode = false }) => {
+type DetailTab = 'video' | 'pedagogy' | 'steps';
+
+const phases = Object.values(WarmupPhase) as WarmupPhase[];
+
+const getVideoId = (url?: string): string | null => {
+  if (!url) return null;
+  const match = url.match(/(?:youtu\.be\/|watch\?v=|&v=|embed\/|shorts\/)([A-Za-z0-9_-]{11})/);
+  return match ? match[1] : null;
+};
+
+const getPhaseIcon = (phase: WarmupPhase, size = 18) => {
+  switch (phase) {
+    case WarmupPhase.PULS: return <Flame className="text-orange-400" size={size} />;
+    case WarmupPhase.AKTIVERING: return <ShieldCheck className="text-emerald-400" size={size} />;
+    case WarmupPhase.TEKNIK: return <Activity className="text-blue-400" size={size} />;
+    case WarmupPhase.INTENSITET: return <Zap className="text-purple-400" size={size} />;
+  }
+};
+
+const getPhaseStyle = (phase: WarmupPhase) => {
+  switch (phase) {
+    case WarmupPhase.PULS: return 'border-orange-500/30 bg-orange-500/10';
+    case WarmupPhase.AKTIVERING: return 'border-emerald-500/30 bg-emerald-500/10';
+    case WarmupPhase.TEKNIK: return 'border-blue-500/30 bg-blue-500/10';
+    case WarmupPhase.INTENSITET: return 'border-purple-500/30 bg-purple-500/10';
+  }
+};
+
+export const WarmupLibrary: React.FC<WarmupLibraryProps> = ({
+  onSelect, selectedIds = [], isSelectionMode = false
+}) => {
   const [exercises, setExercises] = useState<WarmupExercise[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [activePhase, setActivePhase] = useState<WarmupPhase | 'ALL'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedDetailExercise, setSelectedDetailExercise] = useState<WarmupExercise | null>(null);
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+  const [activeVisual, setActiveVisual] = useState<Record<string, DetailTab>>({});
+  const [playingVideos, setPlayingVideos] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    const load = async () => {
-      const data = await dataService.getWarmupExercises();
-      setExercises(data);
-      setLoading(false);
-    };
-    load();
+    let mounted = true;
+    dataService.getWarmupExercises()
+      .then(data => { if (mounted) setExercises(data); })
+      .catch(error => {
+        console.error('Failed to load warm-up exercises:', error);
+        if (mounted) setLoadError(true);
+      })
+      .finally(() => { if (mounted) setLoading(false); });
+    return () => { mounted = false; };
   }, []);
 
-  const filteredExercises = exercises.filter(ex => {
-    const matchesPhase = activePhase === 'ALL' || ex.phase === activePhase;
-    const matchesSearch = ex.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                         ex.description.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesPhase && matchesSearch;
-  });
+  const filteredExercises = useMemo(() => {
+    const search = searchQuery.trim().toLocaleLowerCase('sv-SE');
+    return exercises.filter(ex => {
+      const matchesPhase = activePhase === 'ALL' || ex.phase === activePhase;
+      const matchesSearch = !search || [
+        ex.title, ex.description, ex.sbbfFocus, ex.setup || ''
+      ].some(value => value.toLocaleLowerCase('sv-SE').includes(search));
+      return matchesPhase && matchesSearch;
+    });
+  }, [activePhase, exercises, searchQuery]);
 
-  const getPhaseIcon = (phase: WarmupPhase) => {
-    switch (phase) {
-      case WarmupPhase.PULS: return <Flame className="text-orange-500" size={18} />;
-      case WarmupPhase.AKTIVERING: return <ShieldCheck className="text-emerald-500" size={18} />;
-      case WarmupPhase.TEKNIK: return <Activity className="text-blue-500" size={18} />;
-      case WarmupPhase.INTENSITET: return <Zap className="text-purple-500" size={18} />;
-    }
+  const selectPhase = (phase: WarmupPhase | 'ALL') => {
+    setActivePhase(phase);
+    setSearchQuery('');
+    setMobileDetailOpen(true);
   };
 
-  const getPhaseColor = (phase: WarmupPhase) => {
-    switch (phase) {
-      case WarmupPhase.PULS: return 'border-orange-500/20 bg-orange-500/5';
-      case WarmupPhase.AKTIVERING: return 'border-emerald-500/20 bg-emerald-500/5';
-      case WarmupPhase.TEKNIK: return 'border-blue-500/20 bg-blue-500/5';
-      case WarmupPhase.INTENSITET: return 'border-purple-500/20 bg-purple-500/5';
-    }
-  };
+  if (loading) {
+    return (
+      <div className="flex min-h-[280px] flex-col items-center justify-center gap-3" role="status">
+        <Loader2 size={36} className="animate-spin text-orange-500" />
+        <p className="text-sm font-bold text-slate-400">Laddar uppvärmningsövningar...</p>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div role="alert" className="rounded-2xl border border-rose-500/20 bg-slate-900 p-8 text-center text-sm text-slate-300">
+        Uppvärmningsbiblioteket kunde inte laddas. Försök öppna sidan igen.
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div className="mx-auto max-w-6xl space-y-6 pb-8 md:space-y-8">
+      <header className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-2xl font-black text-white italic uppercase tracking-tighter flex items-center gap-3">
-            <BookOpen className="text-orange-500" /> SBBF Uppvärmningsarkiv
+          <h2 className="flex items-center gap-3 text-2xl font-black uppercase italic tracking-tighter text-white md:text-4xl">
+            <BookOpen className="shrink-0 text-orange-500" size={28} />
+            Uppvärmning
           </h2>
-          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">
-            Gedigen biblipotek för rörelseförståelse & knäkontroll
+          <p className="mt-2 text-xs font-semibold text-slate-400">
+            Fyra kategorier • SBBF-inspirerad rörelseförståelse, teknik och knäkontroll
           </p>
+          {isSelectionMode && (
+            <p className="mt-2 text-xs font-bold text-orange-400" aria-live="polite">
+              {selectedIds.length} övningar valda till träningspasset
+            </p>
+          )}
         </div>
-
-        <div className="relative w-full md:w-64">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
-          <input 
-            type="text" 
-            placeholder="Sök övning..."
+        <div className="relative w-full sm:w-72">
+          <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+          <input
+            type="search"
+            aria-label="Sök uppvärmningsövning"
+            placeholder="Sök uppvärmningsövning..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-800 rounded-xl py-2 pl-10 pr-4 text-xs text-white outline-none focus:border-orange-500 transition-all"
+            onChange={event => {
+              setSearchQuery(event.target.value);
+              if (event.target.value.trim()) {
+                setActivePhase('ALL');
+                setMobileDetailOpen(true);
+              }
+            }}
+            className="min-h-[48px] w-full rounded-xl border border-slate-700 bg-slate-900 py-3 pl-11 pr-4 text-sm text-white outline-none transition-colors placeholder:text-slate-500 focus:border-orange-500"
           />
         </div>
-      </div>
+      </header>
 
-      <div className="flex gap-2 overflow-x-auto pb-2 hide-scrollbar">
-        <button 
-          onClick={() => setActivePhase('ALL')}
-          className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${activePhase === 'ALL' ? 'bg-white text-black border-white' : 'bg-slate-900 text-slate-500 border-slate-800 hover:border-slate-600'}`}
-        >
-          Alla
-        </button>
-        {Object.values(WarmupPhase).map(phase => (
-          <button 
-            key={phase}
-            onClick={() => setActivePhase(phase)}
-            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border flex items-center gap-2 whitespace-nowrap ${activePhase === phase ? 'bg-slate-800 text-white border-slate-600' : 'bg-slate-900 text-slate-500 border-slate-800 hover:border-slate-600'}`}
-          >
-            {getPhaseIcon(phase)}
-            {phase}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2 pb-4">
-        {filteredExercises.map(ex => {
-          const isSelected = selectedIds.includes(ex.id);
-          return (
-            <div 
-              key={ex.id}
-              onClick={() => onSelect?.(ex)}
-              className={`group relative p-5 rounded-3xl border transition-all cursor-pointer ${isSelected ? 'border-orange-500 bg-orange-500/10' : 'bg-slate-900 border-slate-800 hover:border-slate-600'} ${getPhaseColor(ex.phase)}`}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-12 lg:gap-7">
+        <aside className={(mobileDetailOpen ? 'hidden lg:block ' : 'block ') + 'lg:col-span-4'} aria-label="Uppvärmningskategorier">
+          <div className="space-y-3 lg:max-h-[76vh] lg:overflow-y-auto lg:pr-2">
+            <button
+              type="button"
+              onClick={() => selectPhase('ALL')}
+              aria-current={activePhase === 'ALL' ? 'true' : undefined}
+              className={'flex min-h-[68px] w-full items-center gap-4 rounded-2xl border p-4 text-left transition-colors ' +
+                (activePhase === 'ALL' ? 'border-orange-500/50 bg-orange-600/20 text-white' :
+                'border-slate-800 bg-slate-900 text-slate-300 hover:border-slate-600')}
             >
-              <div className="flex justify-between items-start mb-4">
-                <div className="p-2 rounded-xl bg-slate-950 border border-slate-800 shadow-inner">
-                  {getPhaseIcon(ex.phase)}
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1 text-[9px] font-black text-slate-500 uppercase">
-                    <Clock size={12} /> {ex.duration}
-                  </div>
-                  {isSelected && <CheckCircle2 size={20} className="text-orange-500 animate-in zoom-in" />}
-                </div>
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-950/50">
+                <BookOpen size={21} className="text-orange-400" />
               </div>
-
-              <h3 className="text-lg font-black text-white italic uppercase tracking-tighter mb-2 group-hover:text-orange-400 transition-colors">
-                {ex.title}
-              </h3>
-              
-              <p className="text-[11px] text-slate-400 leading-relaxed mb-4 line-clamp-2">
-                {ex.description}
-              </p>
-
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-[8px] font-black text-orange-500 uppercase tracking-widest">
-                    Fokus: {ex.sbbfFocus}
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {ex.coachingPoints.slice(0, 2).map((point, i) => (
-                    <span key={i} className="text-[8px] font-bold text-slate-600 uppercase">
-                      • {point}
-                    </span>
-                  ))}
-                </div>
+              <div className="min-w-0 flex-1">
+                <span className="block text-sm font-black uppercase tracking-tight">Alla uppvärmningar</span>
+                <span className="mt-1 block text-xs text-slate-400">{exercises.length} övningar</span>
               </div>
+              <ChevronRight className="shrink-0" size={18} />
+            </button>
+            {phases.map((phase, index) => (
+              <button
+                type="button"
+                key={phase}
+                onClick={() => selectPhase(phase)}
+                aria-current={activePhase === phase ? 'true' : undefined}
+                className={'flex min-h-[76px] w-full items-center gap-4 rounded-2xl border p-4 text-left transition-colors ' +
+                  (activePhase === phase ? getPhaseStyle(phase) + ' text-white' :
+                  'border-slate-800 bg-slate-900 text-slate-300 hover:border-slate-600')}
+              >
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-950/70">
+                  {getPhaseIcon(phase, 22)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="block text-sm font-black uppercase tracking-tight">
+                    <span className="mr-2 text-xs text-slate-500">{index + 1}.</span>
+                    {phase}
+                  </span>
+                  <span className="mt-1 block text-xs text-slate-400">
+                    {exercises.filter(ex => ex.phase === phase).length} övningar
+                  </span>
+                </div>
+                <ChevronRight className="shrink-0" size={18} />
+              </button>
+            ))}
+          </div>
+        </aside>
 
-              {!isSelectionMode && (
-                <div className="mt-4 pt-4 border-t border-slate-800/50 flex justify-between items-center">
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); setSelectedDetailExercise(ex); }}
-                    className="text-[9px] font-black text-slate-400 uppercase flex items-center gap-1 hover:text-white transition-colors"
-                  >
-                    <Info size={12} /> Detaljer
-                  </button>
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); setSelectedDetailExercise(ex); }}
-                    className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-white hover:bg-orange-600 transition-all"
-                  >
-                    <Play size={12} fill="currentColor" />
-                  </button>
+        <main className={(mobileDetailOpen ? 'block ' : 'hidden lg:block ') + 'min-w-0 lg:col-span-8'}>
+          <button
+            type="button"
+            onClick={() => setMobileDetailOpen(false)}
+            className="mb-4 flex min-h-[44px] items-center gap-2 rounded-xl px-3 text-sm font-bold text-slate-300 hover:bg-slate-800 lg:hidden"
+          >
+            <ChevronLeft size={18} /> Tillbaka till kategorier
+          </button>
+
+          <section className="relative overflow-hidden rounded-[1.5rem] border border-slate-800 bg-slate-900 p-4 shadow-2xl sm:p-6 lg:p-8">
+            <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-orange-600 to-amber-500" />
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-xl font-black uppercase italic tracking-tight text-white md:text-2xl">
+                  {activePhase === 'ALL' ? 'Alla uppvärmningsövningar' : activePhase}
+                </h3>
+                <p className="mt-1 text-xs font-semibold text-slate-400">
+                  {filteredExercises.length} övningar • Välj en vy för video, pedagogik eller steg-för-steg
+                </p>
+              </div>
+              {isSelectionMode && (
+                <span className="rounded-xl border border-orange-500/30 bg-orange-500/10 px-3 py-2 text-xs font-bold text-orange-300">
+                  {selectedIds.length} valda
+                </span>
+              )}
+            </div>
+
+            <div className="space-y-5 lg:max-h-[76vh] lg:overflow-y-auto lg:pr-2">
+              {filteredExercises.map(ex => {
+                const videoId = getVideoId(ex.videoUrl);
+                const currentTab = activeVisual[ex.id] || 'video';
+                const isSelected = selectedIds.includes(ex.id);
+                return (
+                  <article key={ex.id} className={'overflow-hidden rounded-2xl border bg-slate-950 p-4 sm:p-6 ' +
+                    (isSelected ? 'border-orange-500/70' : 'border-slate-800')}>
+                    <div className="mb-5 flex flex-col gap-4 border-b border-slate-800 pb-4">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className={'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ' + getPhaseStyle(ex.phase)}>
+                            {getPhaseIcon(ex.phase, 21)}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-bold uppercase tracking-wide text-orange-400">{ex.phase}</p>
+                            <h4 className="break-words text-lg font-black uppercase italic tracking-tight text-white sm:text-2xl">
+                              {ex.title}
+                            </h4>
+                          </div>
+                        </div>
+                        <span className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-200">
+                          <Clock size={15} className="text-orange-400" /> {ex.duration}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-2" role="group" aria-label={'Visningsalternativ för ' + ex.title}>
+                        {([
+                          ['video', 'Video'],
+                          ['pedagogy', 'Pedagogik'],
+                          ['steps', 'Steg för steg']
+                        ] as const).map(([tab, label]) => (
+                          <button
+                            type="button"
+                            key={tab}
+                            onClick={() => setActiveVisual(prev => ({ ...prev, [ex.id]: tab }))}
+                            aria-pressed={currentTab === tab}
+                            className={'min-h-[44px] flex-1 rounded-xl px-3 py-2 text-xs font-black uppercase transition-colors sm:flex-none ' +
+                              (currentTab === tab ? 'bg-orange-600 text-white' :
+                              'bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-white')}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {currentTab === 'video' && (
+                      <div>
+                        <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
+                          {videoId ? (
+                            playingVideos[ex.id] ? (
+                              <iframe
+                                title={'Demonstration: ' + ex.title}
+                                src={'https://www.youtube-nocookie.com/embed/' + videoId + '?autoplay=1&rel=0&playsinline=1'}
+                                className="absolute inset-0 h-full w-full"
+                                allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
+                                allowFullScreen
+                                loading="lazy"
+                              />
+                            ) : (
+                              <button
+                                type="button"
+                                aria-label={'Spela video: ' + ex.title}
+                                onClick={() => setPlayingVideos(prev => ({ ...prev, [ex.id]: true }))}
+                                className="relative flex h-full w-full items-center justify-center"
+                              >
+                                <img src={'https://img.youtube.com/vi/' + videoId + '/hqdefault.jpg'} alt="" loading="lazy"
+                                  className="absolute inset-0 h-full w-full object-cover opacity-60" />
+                                <span className="relative flex h-16 w-16 items-center justify-center rounded-full bg-red-600 text-white shadow-xl">
+                                  <Play size={26} fill="currentColor" />
+                                </span>
+                              </button>
+                            )
+                          ) : (
+                            <div className="space-y-2 p-5 text-center">
+                              <Youtube size={34} className="mx-auto text-slate-500" />
+                              <p className="text-sm font-semibold text-slate-300">Ingen verifierad video tillgänglig</p>
+                              <p className="text-xs text-slate-500">Se Pedagogik och Steg för steg för instruktioner</p>
+                            </div>
+                          )}
+                        </div>
+                        {videoId && (
+                          <a href={'https://www.youtube.com/watch?v=' + videoId} target="_blank" rel="noopener noreferrer"
+                            className="mt-3 flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-red-600/10 px-4 text-xs font-bold uppercase text-red-400 hover:bg-red-600/20">
+                            <Youtube size={17} /> Se på YouTube
+                          </a>
+                        )}
+                      </div>
+                    )}
+
+                    {currentTab === 'pedagogy' && (
+                      <div className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:p-6">
+                        <div>
+                          <p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase text-emerald-400"><BookOpen size={16} /> Varför vi tränar</p>
+                          <p className="text-sm leading-relaxed text-slate-200">{ex.description}</p>
+                        </div>
+                        <div className="rounded-xl border border-orange-500/20 bg-orange-500/10 p-4">
+                          <p className="text-xs font-bold uppercase text-orange-400">Fokusområde</p>
+                          <p className="mt-2 text-base font-black text-white">{ex.sbbfFocus}</p>
+                        </div>
+                        <div>
+                          <p className="mb-2 text-xs font-bold uppercase text-emerald-400">Coachingpunkter</p>
+                          <ul className="space-y-2">
+                            {ex.coachingPoints.map((point, index) => (
+                              <li key={index} className="rounded-xl bg-slate-950 p-3 text-sm text-slate-200">• {point}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    )}
+
+                    {currentTab === 'steps' && (
+                      <div className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:p-6">
+                        <p className="flex items-center gap-2 text-xs font-bold uppercase text-blue-400"><Info size={16} /> Genomförande</p>
+                        {ex.visualSteps && ex.visualSteps.length > 0 ? (
+                          <ol className="space-y-3">
+                            {ex.visualSteps.map((step, index) => (
+                              <li key={index} className="flex items-start gap-3 rounded-xl bg-slate-950 p-3">
+                                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-500/15 text-xs font-black text-blue-400">{index + 1}</span>
+                                <span className="text-sm leading-relaxed text-slate-200">{step}</span>
+                              </li>
+                            ))}
+                          </ol>
+                        ) : (
+                          <p className="text-sm leading-relaxed text-slate-200">{ex.description}</p>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="mt-5 grid grid-cols-1 gap-3 border-t border-slate-800 pt-5 sm:grid-cols-2">
+                      <div className="rounded-xl bg-slate-900 p-4">
+                        <p className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase text-slate-400"><Target size={15} /> Organisation</p>
+                        <p className="text-sm leading-relaxed text-slate-200">{ex.setup || 'Anpassa upplägg efter antal spelare och tillgänglig yta.'}</p>
+                      </div>
+                      <div className="rounded-xl border border-orange-500/20 bg-orange-500/5 p-4">
+                        <p className="mb-2 text-[11px] font-bold uppercase text-orange-400">Coaching tips</p>
+                        <p className="text-sm leading-relaxed text-slate-200">{ex.coachingPoints.join(' • ')}</p>
+                      </div>
+                    </div>
+
+                    {isSelectionMode && (
+                      <button
+                        type="button"
+                        disabled={!onSelect}
+                        onClick={() => onSelect?.(ex)}
+                        aria-pressed={isSelected}
+                        className={'mt-5 flex min-h-[52px] w-full items-center justify-center gap-3 rounded-xl px-4 py-3 text-sm font-black uppercase transition-colors disabled:opacity-50 ' +
+                          (isSelected ? 'border border-orange-500 bg-orange-500/20 text-orange-300' :
+                          'bg-orange-600 text-white hover:bg-orange-500')}
+                      >
+                        {isSelected ? <CheckCircle2 size={19} /> : <Target size={19} />}
+                        {isSelected ? 'Vald till träningspasset – ta bort' : 'Lägg till i träningspasset'}
+                      </button>
+                    )}
+                  </article>
+                );
+              })}
+              {filteredExercises.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-slate-700 p-8 text-center text-sm text-slate-400">
+                  Inga uppvärmningsövningar matchar sökningen.
                 </div>
               )}
             </div>
-          );
-        })}
+          </section>
+        </main>
       </div>
-
-      {filteredExercises.length === 0 && (
-        <div className="py-20 text-center space-y-4 border-2 border-dashed border-slate-900 rounded-[3rem]">
-          <Search size={48} className="text-slate-800 mx-auto" />
-          <p className="text-xs font-black text-slate-600 uppercase tracking-widest">Inga övningar matchar din sökning</p>
-        </div>
-      )}
-      {selectedDetailExercise && (
-        <div className="fixed inset-0 z-[800] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[85vh]">
-             <div className="p-8 border-b border-slate-800 flex justify-between items-center bg-slate-950/40 shrink-0">
-                <div className="flex items-center gap-4">
-                   <div className={`p-3 rounded-xl border shadow-inner ${getPhaseColor(selectedDetailExercise.phase)}`}>
-                      {getPhaseIcon(selectedDetailExercise.phase)}
-                   </div>
-                   <div>
-                      <h3 className="text-2xl font-black text-white italic uppercase tracking-tighter leading-none">{selectedDetailExercise.title}</h3>
-                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">{selectedDetailExercise.phase} • {selectedDetailExercise.duration}</p>
-                   </div>
-                </div>
-                <button onClick={() => setSelectedDetailExercise(null)} className="p-2 text-slate-500 hover:text-white transition-colors bg-slate-800 rounded-full"><Activity size={20} className="rotate-45" /></button>
-             </div>
-             
-             <div className="p-8 overflow-y-auto custom-scrollbar space-y-8">
-                {selectedDetailExercise.videoUrl && (
-                  <div className="w-full aspect-video rounded-3xl overflow-hidden bg-slate-950 border border-slate-800 shadow-2xl relative group">
-                    {getVideoId(selectedDetailExercise.videoUrl) ? (
-                      <iframe 
-                        src={`https://www.youtube-nocookie.com/embed/${getVideoId(selectedDetailExercise.videoUrl)}?rel=0&modestbranding=1&playsinline=1`}
-                        title={selectedDetailExercise.title}
-                        className="w-full h-full absolute inset-0" 
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen
-                      />
-                    ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center space-y-4">
-                        <Youtube size={48} className="text-slate-800" />
-                        <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Ogiltig videolänk</p>
-                        <button 
-                          onClick={() => window.open(selectedDetailExercise.videoUrl, '_blank')}
-                          className="px-4 py-2 bg-slate-800 rounded-xl text-[10px] font-black text-white uppercase tracking-widest hover:bg-slate-700 transition-all"
-                        >
-                          Öppna i ny flik
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {selectedDetailExercise.videoUrl && (
-                  <div className="space-y-1">
-                    <button 
-                      onClick={() => window.open(selectedDetailExercise.videoUrl, '_blank')}
-                      className="w-full py-3 bg-red-600/10 hover:bg-red-600/20 text-red-500 font-black uppercase text-[9px] tracking-widest flex items-center justify-center gap-2 rounded-xl transition-all border border-red-500/20"
-                    >
-                      <Youtube size={14} /> Se på YouTube
-                    </button>
-                    <a 
-                      href={selectedDetailExercise.videoUrl} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="text-[8px] text-slate-500 hover:text-orange-500 transition-colors truncate block px-1"
-                    >
-                      {selectedDetailExercise.videoUrl}
-                    </a>
-                  </div>
-                )}
-
-                <div className="grid md:grid-cols-2 gap-8">
-                   <div className="space-y-6">
-                      <div className="space-y-4">
-                         <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><Info size={14} /> Beskrivning</h4>
-                         <p className="text-sm text-slate-300 leading-relaxed font-medium">{selectedDetailExercise.description}</p>
-                      </div>
-
-                      {selectedDetailExercise.setup && (
-                         <div className="space-y-4">
-                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><Target size={14} className="text-blue-500" /> Organisation</h4>
-                            <div className="p-4 rounded-2xl bg-blue-600/5 border border-blue-500/20">
-                               <p className="text-xs font-bold text-slate-300 uppercase">{selectedDetailExercise.setup}</p>
-                            </div>
-                         </div>
-                      )}
-                   </div>
-
-                   <div className="space-y-6">
-                      {selectedDetailExercise.visualSteps && selectedDetailExercise.visualSteps.length > 0 && (
-                         <div className="space-y-4">
-                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><Activity size={14} className="text-purple-500" /> Steg-för-steg</h4>
-                            <div className="space-y-2">
-                               {selectedDetailExercise.visualSteps.map((step, i) => (
-                                  <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-slate-950 border border-slate-800">
-                                     <div className="w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center text-[10px] font-black text-purple-500 shrink-0 border border-purple-500/20">{i + 1}</div>
-                                     <span className="text-xs font-bold text-slate-300 uppercase">{step}</span>
-                                  </div>
-                               ))}
-                            </div>
-                         </div>
-                      )}
-                   </div>
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-8">
-                   <div className="space-y-4">
-                      <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-500" /> Coaching Points</h4>
-                      <ul className="space-y-2">
-                         {selectedDetailExercise.coachingPoints.map((point, i) => (
-                            <li key={i} className="flex items-start gap-3 p-3 rounded-xl bg-slate-950 border border-slate-800">
-                               <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0"></div>
-                               <span className="text-xs font-bold text-slate-300 uppercase">{point}</span>
-                            </li>
-                         ))}
-                      </ul>
-                   </div>
-                   
-                   <div className="space-y-4">
-                      <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><Target size={14} className="text-orange-500" /> SBBF Fokusområde</h4>
-                      <div className="p-6 rounded-[2rem] bg-orange-600/10 border border-orange-500/20 flex flex-col items-center justify-center text-center space-y-2">
-                         <Flame size={32} className="text-orange-500 mb-2" />
-                         <span className="text-lg font-black text-white italic uppercase">{selectedDetailExercise.sbbfFocus}</span>
-                         <span className="text-[9px] font-bold text-orange-400 uppercase tracking-widest">Utvecklingsmål</span>
-                      </div>
-                   </div>
-                </div>
-             </div>
-
-             <div className="p-6 bg-slate-950/60 border-t border-slate-800 shrink-0 flex justify-end">
-                <button onClick={() => setSelectedDetailExercise(null)} className="px-8 py-3 rounded-xl bg-slate-800 text-white font-black uppercase text-[10px] tracking-widest hover:bg-slate-700 transition-all">Stäng</button>
-             </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
